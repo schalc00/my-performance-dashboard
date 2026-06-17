@@ -204,7 +204,7 @@ if check_password():
         
     if "prozis_weight" not in st.session_state: st.session_state.prozis_weight = 102.0
 
-    # REZEPT-DATENBANK
+    # DYNAMISCHE REZEPT-DATENBANK
     recipe_book = {
         "Frühstück 🥞": {
             "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
@@ -228,7 +228,7 @@ if check_password():
         }
     }
 
-    # AUTOMATISCHE MAKROANPASSUNG (PROZIS WAAGE LOOP)
+    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM NEUEN MORGENGEWICHT-FELD
     w_aktuell = st.session_state.prozis_weight
     tagesbedarf = {
         "kcal": int(w_aktuell * 25.5),      
@@ -267,7 +267,7 @@ if check_password():
     if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
     if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # WORKOUT MECHANIK
+    # THE WORKOUT ENGINE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -299,16 +299,15 @@ if check_password():
         with st.expander("📈 Ergebnisse / Historie"):
             st.dataframe(pd.DataFrame(st.session_state.kraft_history[ue_name]), hide_index=True, use_container_width=True)
 
-    # 3-SPALTEN LAYOUT (Ernährung links, Training mittig, Garmin rechts)
+    # LAYOUT OVERVIEW
     col1, col2, col3 = st.columns([1.1, 1.5, 1], gap="large")
 
     # ==========================================
-    # SPALTE 1: ERNÄHRUNG & ORGA (PROMINENT LINKS)
+    # SPALTE 1: ERNÄHRUNG & ORGA (LINKS)
     # ==========================================
     with col1:
         st.header("🍽️ Ernährung & Orga")
         
-        # Permanent offen
         st.metric("Kcal Restbudget", f"{rem_kcal} kcal", f"Ziel: {tagesbedarf['kcal']}")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
@@ -316,9 +315,10 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
+        # KORREKTUR: Saubere Namensänderung auf Wunsch
         st.write("---")
-        st.session_state.prozis_weight = st.number_input("⚖️ Prozis Waage (Morgengewicht kg):", value=float(st.session_state.prozis_weight), step=0.1)
-        st.caption("Änderungen passen deine Ziel-Makros sofort vollautomatisch an.")
+        st.session_state.prozis_weight = st.number_input("⚖️ Morgengewicht (kg):", value=float(st.session_state.prozis_weight), step=0.1)
+        st.caption("Echtzeit-Anpassung deiner Trainings-Makros.")
         st.write("---")
 
         with st.expander("👨‍🍳 Perform-All Chefkoch: Rezeptkatalog"):
@@ -380,7 +380,7 @@ if check_password():
                         st.rerun()
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN & GEINTEGRIERTES DEHNEN (MITTE)
+    # SPALTE 2: TRAININGSPLAN & INTEGRIERTES DEHNEN (MITTE)
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -392,8 +392,12 @@ if check_password():
         
         with tab1:
             st.subheader("Oberkörper Grundkraft")
-            # NEU: INTEGRIERTES MOBILITY/DEHN-UPGRADE
-            st.checkbox("🧘 Schulter-Mobility & Brust-Dehnen (Warm-up vor Bankdrücken)")
+            # KORREKTUR: Ausgeschriebene, handballspezifische Dehnübungen zum Abhaken
+            with st.expander("🧘 Warm-up: Schulter- & Brust-Mobility"):
+                st.checkbox("10x Schulter- & Armkreisen vorwärts/rückwärts")
+                st.checkbox("12x Besenstil / Band Pass-Throughs (Schultermobilität)")
+                st.checkbox("45s Brust-Dehnen am Türrahmen (je Seite)")
+                st.checkbox("12x Scapula Push-ups (Schulterblatt-Aktivierung)")
             st.write("---")
             with st.expander("🏋️ Bankdrücken (4 Sätze x 6 Wdh.)"): render_exercise_engine("Bankdrücken", 85.0, 6)
             with st.expander("🏋️ Klimmzüge mit Zusatzgewicht"): render_exercise_engine("Klimmzüge", 10.0, 6)
@@ -403,7 +407,11 @@ if check_password():
             
         with tab2:
             st.subheader("Handball Leg Day (Explosivität & Gelenkschutz)")
-            st.checkbox("🧘 Hüftöffner & Knie-Dehnprogramm (Erhöht die Stabilität bei Täuschungen)")
+            with st.expander("🧘 Warm-up: Hüft- & Knie-Stabilisierung"):
+                st.checkbox("60s Deep Squat Hold (Tiefe Hocke halten)")
+                st.checkbox("5x World's Greatest Stretch (je Seite)")
+                st.checkbox("60s Hip 90/90 Rotation (Hüftmobilität)")
+                st.checkbox("45s Couch Stretch / Hüftbeuger aufdehnen (je Seite)")
             st.write("---")
             with st.expander("🏋️ Bulgarian Split Squats"): render_exercise_engine("Bulgarian Split Squats", 20.0, 8)
             with st.expander("🏋️ Trap-Bar Kreuzheben"): render_exercise_engine("Trap-Bar Kreuzheben", 120.0, 6)
@@ -418,14 +426,19 @@ if check_password():
             with st.expander("🏋️ Seitheben am Kabelzug"): render_exercise_engine("Seitheben", 12.5, 12)
             with st.expander("🏋️ Incline Bicep Curls"): render_exercise_engine("Incline Curls", 15.0, 12)
             with st.expander("🏋️ Tricep Rope Pushdowns"): render_exercise_engine("Trizepsdrücken", 30.0, 12)
-            # NEU: GEFORDERTES FINISH STRETCHING
             st.write("---")
-            st.checkbox("🧘 Post-Workout Dehnprogramm (Nacken & Lats regenerieren)")
+            # KORREKTUR: Ausgeschriebenes Cool-down Programm
+            with st.expander("🧘 Cool-down: Post-Workout Oberkörper Stretching"):
+                st.checkbox("60s Kindeshaltung / Child's Pose (Lat-Dehnen)")
+                st.checkbox("45s Pec-Stretch an der Wand (Brustmuskel-Regeneration)")
+                st.checkbox("30s Unterarm- & Handgelenk-Dehnen (wichtig für Wurfarm/Harz-Griff)")
             
         with tab4:
             st.subheader("Schnellkraft & Rumpfstabilität")
-            # NEU: GEFORDERTES PRE-STRETCHING FÜR DIE WURFKRAFT
-            st.checkbox("🧘 Brustwirbelsäulen-Rotation & Core-Mobility (Vor dem Schnellkraftwurf)")
+            with st.expander("🧘 Warm-up: BWS-Rotation & Core-Mobility"):
+                st.checkbox("10x BWS-Rotation im Vierfüßlerstand (je Seite)")
+                st.checkbox("15x Band Pull-Aparts (Aktivierung oberer Rücken)")
+                st.checkbox("5x Inchworms mit Ausfallschritt & Hüftöffner")
             st.write("---")
             with st.expander("🏋️ Power Cleans / Umsetzen"): render_exercise_engine("Power Cleans", 60.0, 3)
             with st.expander("🏋️ Medizinball-Rotationswürfe"): render_exercise_engine("Medizinball-Würfe", 6.0, 8)
@@ -437,9 +450,11 @@ if check_password():
             st.subheader("Handball Ausdauer")
             ausdauer_wahl = st.radio("Cardio-Session:", ["Zone 2 Lauf (45-60 Min.)", "Handball Shuttle Runs (15x 20m)"])
             st.checkbox(f"Session erledigt: {ausdauer_wahl}")
-            # NEU: COOL-DOWN STRETCHING INKLUSIVE BLACKROLL
             st.write("---")
-            st.checkbox("🧘 Cool-Down Dehnen & Blackroll (Beine & Waden ausrollen gegen Muskelkater)")
+            with st.expander("🧘 Cool-down: Regeneration & Blackroll"):
+                st.checkbox("3 Min. Waden & Schienbeine ausrollen (Blackroll gegen Shinsplints)")
+                st.checkbox("60s Quad-Stretch im Stehen (je Oberschenkel)")
+                st.checkbox("60s Hamstring-Stretching mit Band (Hintere Kette entlasten)")
 
     # ==========================================
     # SPALTE 3: GARMIN VITAL-HUB (RECHTS)
