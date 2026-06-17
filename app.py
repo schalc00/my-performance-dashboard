@@ -6,7 +6,7 @@ from garminconnect import Garmin
 from PIL import Image
 from google import genai
 
-# 1. Page Configuration (Fokus auf mobile Nutzung)
+# 1. Page Configuration (3 Spalten mit Fokus auf die Mitte)
 st.set_page_config(page_title="Perform All // Alec", page_icon="⚡", layout="wide")
 
 # Minimalistisches CSS für den authentischen "Perform All" Dark-App-Look
@@ -53,6 +53,7 @@ if check_password():
             berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
             today = berlin_time.date().isoformat()
             
+            # Die stabilsten Haupt-Endpunkte abrufen
             stats = client.get_stats(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
@@ -186,14 +187,12 @@ if check_password():
     # INITIALISIERUNGEN (SESSION STATE)
     # ==========================================
     if "meals_log" not in st.session_state: st.session_state.meals_log = []
+    else: st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
+
     if "favorites" not in st.session_state: st.session_state.favorites = {"--- Bitte wählen ---": None}
     if "ki_wochenplan" not in st.session_state:
         st.session_state.ki_wochenplan = {"Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], "Freitag": [], "Samstag": [], "Sonntag": []}
         
-    if "miles_collected" not in st.session_state: st.session_state.miles_collected = 14200
-    if "payback_points" not in st.session_state: st.session_state.payback_points = 8450
-    
-    # NEU: Prozis-Gewichts-Speicher zur automatischen Makroanpassung
     if "prozis_weight" not in st.session_state: st.session_state.prozis_weight = 102.0
 
     # DYNAMISCHE REZEPT-DATENBANK
@@ -214,23 +213,27 @@ if check_password():
             "Sojageschnetzeltes in Pilzrahm": {"kcal": 590, "protein": 53, "carbs": 58, "fat": 11, "zutaten": ["60g Sojaschnetzel", "70g Vollkornnudeln", "200g Champignons", "Leicht-Kochcreme"], "anleitung": "Schnetzel einweichen, ausdrücken, kross braten. Pilze und Creme dazu."},
             "Protein-Bowl mit Falafel": {"kcal": 580, "protein": 44, "carbs": 65, "fat": 14, "zutaten": ["200g Hüttenkäse light", "100g Falafel", "60g Couscous", "Gemüse"], "anleitung": "Couscous quellen lassen. Mit Hüttenkäse, Gemüse und Falafel anrichten."}
         },
+        "Knackige Salate 🥗": {
+            "Thunfisch-Kichererbsen-Power-Salat": {"kcal": 550, "protein": 48, "carbs": 42, "fat": 18, "zutaten": ["1 Dose Thunfisch", "150g Kichererbsen", "100g Gurke", "50g Feta light", "10ml Olivenöl"], "anleitung": "Kichererbsen abspülen. Thunfisch, Gemüse und Feta light würfeln. Mit Olivenöl und Zitronensaft vermengen."},
+            "Hähnchen-Avocado-Performance-Salat": {"kcal": 610, "protein": 54, "carbs": 20, "fat": 26, "zutaten": ["200g Hähnchenbrust", "80g Avocado", "150g Mix-Salat", "100g Kirschtomaten"], "anleitung": "Hähnchenbrust anbraten und schneiden. Avocado würfeln. Salat waschen, mit Fleisch, Avocado und Dressing servieren."}
+        },
         "Snacks 🍫": {
             "Magerquark-Flavour-Bowl": {"kcal": 290, "protein": 42, "carbs": 16, "fat": 1, "zutaten": ["300g Magerquark", "50ml Wasser", "Flavour Drops", "50g Himbeeren"], "anleitung": "Quark mit Wasser und Drops cremig schlagen. Himbeeren unterheben."},
             "Beef Jerky Handvoll": {"kcal": 150, "protein": 28, "carbs": 3, "fat": 2, "zutaten": ["50g Beef Jerky"], "anleitung": "Snackfertig aus der Packung für maximalen Muskelschutz nach dem Training."}
         }
     }
 
-    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF PROZIS WAAGE
+    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF PROZIS-GEWICHT
     w_aktuell = st.session_state.prozis_weight
     tagesbedarf = {
-        "kcal": int(w_aktuell * 25.5),      # Skaliert das Defizit dynamisch
-        "protein": int(w_aktuell * 2.0),    # Exakt 2g/kg Muskelschutz
+        "kcal": int(w_aktuell * 25.5),      
+        "protein": int(w_aktuell * 2.0),    
         "carbs": int(w_aktuell * 2.55),
         "fat": int(w_aktuell * 0.78)
     }
 
     berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
-    tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sunntag"]
+    tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
     heute_wochentag = tage_de[berlin_time.weekday()]
 
     # Verrechnung Makros
@@ -291,16 +294,15 @@ if check_password():
         with st.expander("📈 Ergebnisse / Historie"):
             st.dataframe(pd.DataFrame(st.session_state.kraft_history[ue_name]), hide_index=True, use_container_width=True)
 
-    # LAYOUT OVERVIEW (SPALTE 1 UND 3 GETAUSCHT FÜR HANDY-ERGONOMIE)
+    # LAYOUT OVERVIEW
     col1, col2, col3 = st.columns([1.1, 1.5, 1], gap="large")
 
     # ==========================================
-    # JETZT NEU IN SPALTE 1: ERNÄHRUNG, REZEPTE & DIE REWARD-ENGINE
+    # SPALTE 1: ERNÄHRUNG & ORGA (VORNE AN)
     # ==========================================
     with col1:
         st.header("🍽️ Ernährung & Orga")
         
-        # AUSGESCHLOSSEN: Makros permanent offen
         st.metric("Kcal Restbudget", f"{rem_kcal} kcal", f"Ziel: {tagesbedarf['kcal']}")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
@@ -308,7 +310,6 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
-        # PROZIS AUTOMATION WIDGET
         st.write("---")
         st.session_state.prozis_weight = st.number_input("⚖️ Prozis Waage (Morgengewicht kg):", value=float(st.session_state.prozis_weight), step=0.1)
         st.caption("Änderungen passen deine Ziel-Makros sofort vollautomatisch an.")
@@ -331,7 +332,6 @@ if check_password():
                 st.rerun()
 
         with st.expander("📅 Dein Wochenplan & Einkaufsliste", expanded=True):
-            # NEU: AUTOMATISCHER EINKAUFSLISTEN GENERATOR
             if st.button("🛒 Einkaufsliste generieren"):
                 zutaten_sammlung = []
                 for tag, m_liste in st.session_state.ki_wochenplan.items():
@@ -373,27 +373,13 @@ if check_password():
                         st.session_state.meals_log.pop(idx)
                         st.rerun()
 
-        with st.expander("💼 Finanzen & Points Engine (C24 / Amex / Revolut)", expanded=True):
-            st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
-            st.caption("Gehaltskonto: **C24 Smart** (Vollautomatisiert über Webhook/Make-Schnittstelle)")
-            
-            f_col1, f_col2 = st.columns(2)
-            f_col1.metric("Miles & More", f"{st.session_state.miles_collected:,} M")
-            f_col2.metric("Payback Punkte", f"{st.session_state.payback_points:,} P")
-            
-            st.write("---")
-            spending = st.number_input("Umsatzbetrag (€):", value=50.0, step=10.0)
-            method = st.selectbox("Zahlart:", ["American Express (Daily Spending)", "Revolut (Miete/Dauerauftrag)"])
-            
-            if st.button("Punkte gutschreiben 💳"):
-                if "American" in method: st.session_state.payback_points += int(spending / 2)
-                else: st.session_state.miles_collected += int(spending)
-                st.rerun()
-
-            st.checkbox("Handball-Dehnprogramm absolviert (15 Min)")
+        # STANDALONE ROUTINE (Ausgelagert aus Finanzen)
+        st.write("---")
+        st.subheader("✅ Daily Routine")
+        st.checkbox("Handball-Dehnprogramm absolviert (15 Min)")
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN (BLEIBT UNBERÜHRT IN DER MITTE)
+    # SPALTE 2: TRAININGSPLAN (MITTE)
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -436,12 +422,11 @@ if check_password():
             st.checkbox(f"Session erledigt: {ausdauer_wahl}")
 
     # ==========================================
-    # JETZT IN SPALTE 3: GARMIN VITAL-HUB (ZUKLAPPBAR)
+    # SPALTE 3: GARMIN VITAL-HUB
     # ==========================================
     with col3:
         st.header("📊 Garmin Hub")
         
-        # AUSGESCHLOSSEN: Energie & Umsatz permanent flach sichtbar
         st.subheader("🔥 Live-Umsatz")
         st.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
         st.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
