@@ -43,7 +43,7 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # GARMIN DATENABRUF (Cached für 5 Minuten)
+    # ERWEITERTER GARMIN DATENABRUF (Inklusive Tiefen-Analyse für Krafttraining)
     @st.cache_data(ttl=300)
     def fetch_garmin_data():
         try:
@@ -56,15 +56,68 @@ if check_password():
             summary = client.get_user_summary(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
-            activities = client.get_activities(0, 4)
+            activities = client.get_activities(0, 5) # Letzten 5 Einheiten
             
             workout_list = []
+            garmin_strength_today = {}
+            raw_strength_sets = []
+            
             if activities:
                 for act in activities:
                     w_type = act.get('activityType', {}).get('typeKey', 'Workout')
                     w_dur = round(act.get('duration', 0) / 60)
                     w_cal = round(act.get('calories', 0))
                     workout_list.append(f"💪 {w_type}: {w_dur} Min ({w_cal} kcal)")
+                    
+                    # Wenn heute ein Krafttraining absolviert wurde, ziehen wir uns die exakten Sätze!
+                    act_date = act.get('startTimeLocal', '')[:10]
+                    if w_type == 'strength_training' and act_date == today:
+                        act_id = act.get('activityId')
+                        try:
+                            # Holt die Details der Hebe-Session (Sätze, Reps, Kilos)
+                            details = client.get_activity_details(act_id)
+                            sets = details.get('sets', []) or details.get('summaryDTO', {}).get('sets', [])
+                            
+                            for idx, s in enumerate(sets):
+                                reps = s.get('reps', 0)
+                                weight = s.get('weight', 0)
+                                # Garmin speichert Gewichte manchmal in Gramm
+                                if weight > 1000:
+                                    weight = round(weight / 1000, 1)
+                                else:
+                                    weight = round(weight, 1)
+                                    
+                                if reps > 0:
+                                    ex_name = s.get('exerciseName', 'Unbekannte Übung').lower()
+                                    set_str = f"{weight} kg x {reps} Wdh."
+                                    raw_strength_sets.append(f"Satz {idx+1}: {s.get('exerciseName', 'Set')} -> {set_str}")
+                                    
+                                    # Automatisches Keyword-Routing in Alec's Trainingsplan
+                                    matched_key = None
+                                    if "bench" in ex_name: matched_key = "Bankdrücken"
+                                    elif "klimm" in ex_name or "pull" in ex_name: matched_key = "Klimmzüge"
+                                    elif "dip" in ex_name: matched_key = "Dips"
+                                    elif "row" in ex_name or "ruder" in ex_name: matched_key = "Langhantelrudern"
+                                    elif "face" in ex_name: matched_key = "Face Pulls"
+                                    elif "split" in ex_name or "bulgarian" in ex_name: matched_key = "Bulgarian Split Squats"
+                                    elif "deadlift" in ex_name or "kreuzheben" in ex_name: matched_key = "Trap-Bar Kreuzheben"
+                                    elif "jump" in ex_name or "box" in ex_name: matched_key = "Box Jumps"
+                                    elif "lunge" in ex_name: matched_key = "Lateral Lunges"
+                                    elif "hamstring" in ex_name or "nordic" in ex_name: matched_key = "Nordic Hamstring Curls"
+                                    elif "incline" in ex_name: matched_key = "Schrägbankdrücken KH"
+                                    elif "cable" in ex_name: matched_key = "Kabelrudern eng"
+                                    elif "seitheben" in ex_name or "lateral" in ex_name: matched_key = "Seitheben"
+                                    elif "curl" in ex_name: matched_key = "Incline Curls"
+                                    elif "tricep" in ex_name or "pushdown" in ex_name: matched_key = "Trizepsdrücken"
+                                    elif "clean" in ex_name: matched_key = "Power Cleans"
+                                    elif "press" in ex_name: matched_key = "Pallof Press"
+                                    
+                                    if matched_key:
+                                        if matched_key not in garmin_strength_today:
+                                            garmin_strength_today[matched_key] = []
+                                        garmin_strength_today[matched_key].append(set_str)
+                        except:
+                            pass
             
             sleep_dto = sleep_data.get("dailySleepDTO", {}) if sleep_data else {}
             sleep_hours = round(sleep_dto.get("sleepTimeSeconds", 0) / 3600, 1) if sleep_dto else 0
@@ -86,6 +139,8 @@ if check_password():
                 "rhr": heart_rates.get("restingHeartRate", "--"),
                 "max_hr": heart_rates.get("maxHeartRate", "--"),
                 "workout_list": workout_list,
+                "garmin_strength_today": garmin_strength_today,
+                "raw_strength_sets": raw_strength_sets,
                 "steps": steps,
                 "step_goal": step_goal,
                 "active_cal": active_cal,
@@ -101,6 +156,7 @@ if check_password():
         except:
             fallback = {
                 "rhr": "--", "max_hr": "--", "workout_list": ["Synchronisiere..."],
+                "garmin_strength_today": {}, "raw_strength_sets": [],
                 "steps": 0, "step_goal": 10000, "active_cal": 0, "bmr_cal": 0, "total_cal": 0,
                 "distance_km": 0.0, "floors": 0, "sleep_duration": 0, "sleep_score": "--", "stress_avg": "--"
             }
@@ -109,12 +165,11 @@ if check_password():
     g_data, garmin_success = fetch_garmin_data()
 
     # ==========================================
-    # ABSICHERUNG GEGEN TYP-FEHLER (DASHBOARD-CLEANER)
+    # DATEN-CLEANER GEGEN UNERWÜNSCHTE CRASHES
     # ==========================================
     if "meals_log" not in st.session_state:
         st.session_state.meals_log = []
     else:
-        # Bereinigt alte Text-Reste im Hintergrund, damit die App nie wieder wegen Zeile 129 abstürzt
         st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
 
     if "favorites" not in st.session_state:
@@ -125,16 +180,13 @@ if check_password():
             "Standard Hähnchen-Reis-Pfanne": {"kcal": 720, "protein": 55, "carbs": 90, "fat": 12}
         }
 
-    # Makros für Alec (102kg - Defizit & Muskelschutz)
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
-    # Live-Berechnung der Makros
     verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
     verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
     verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
     verzehrt_fat = sum(m.get("fat", 0) for m in st.session_state.meals_log)
 
-    # All deine Übungen für die automatische Generierung von Verlauf & Feedback
     alle_uebungen = [
         "Bankdrücken", "Klimmzüge", "Dips", "Langhantelrudern", "Face Pulls",
         "Bulgarian Split Squats", "Trap-Bar Kreuzheben", "Box Jumps", "Lateral Lunges", "Nordic Hamstring Curls",
@@ -144,29 +196,33 @@ if check_password():
 
     if "kraft_history" not in st.session_state:
         st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
-        st.session_state.kraft_history["Bankdrücken"] = [{"Datum": "12.06.", "Leistung": "82.5 kg x 6, 6, 6"}, {"Datum": "15.06.", "Leistung": "85.0 kg x 6, 6, 5"}]
-        st.session_state.kraft_history["Trap-Bar Kreuzheben"] = [{"Datum": "12.06.", "Leistung": "115.0 kg x 6, 6, 6"}, {"Datum": "16.06.", "Leistung": "120.0 kg x 6, 6, 6"}]
+        st.session_state.kraft_history["Bankdrücken"] = [{"Datum": "15.06.", "Leistung": "85.0 kg x 6, 6, 5"}]
+        st.session_state.kraft_history["Trap-Bar Kreuzheben"] = [{"Datum": "16.06.", "Leistung": "120.0 kg x 6, 6, 6"}]
 
     if "current_workout_logs" not in st.session_state:
         st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE CORE ENGINE: SATZ-FÜR-SATZ TRACKING MIT LÖSCHFUNKTION & HISTORIE
+    # THE CORE ENGINE: TRACKING ENGINE MIT GARMIN INTERACTION
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
+        
+        # NEU: Integrierte Garmin-Zeile direkt in der jeweiligen Übung
+        g_today = g_data.get("garmin_strength_today", {})
+        if ue_name in g_today:
+            st.info(f"⌚ Garmin Live-Tracker heute: {', '.join(g_today[ue_name])}")
+            
         st.write("---")
         
-        # 1. Sofortiges Live-Feedback eingetragener Sätze inklusive Lösch-X
         if st.session_state.current_workout_logs[ue_name]:
             st.markdown("**Eingetragene Sätze für heute:**")
             for idx, sa in enumerate(st.session_state.current_workout_logs[ue_name]):
                 s_col1, s_col2 = st.columns([5, 1])
                 s_col1.markdown(f"`Satz {idx+1}:` **{sa}**")
-                if s_col2.button("❌", key=f"del_set_{ue_name}_{idx}", help="Diesen Satz korrigieren"):
+                if s_col2.button("❌", key=f"del_set_{ue_name}_{idx}"):
                     st.session_state.current_workout_logs[ue_name].pop(idx)
                     st.rerun()
             st.write("---")
 
-        # 2. Satz-Eingabe-Felder
         se_col1, se_col2 = st.columns(2)
         weight_input = se_col1.number_input("Gewicht (kg):", value=float(default_w), step=2.5, key=f"w_in_{ue_name}")
         reps_input = se_col2.number_input("Wiederholungen:", value=int(default_r), step=1, key=f"r_in_{ue_name}")
@@ -174,7 +230,7 @@ if check_password():
         b_col1, b_col2 = st.columns(2)
         if b_col1.button("Satz loggen ➕", key=f"btn_add_{ue_name}"):
             st.session_state.current_workout_logs[ue_name].append(f"{weight_input} kg x {reps_input} Wdh.")
-            st.toast(f"Satz {len(st.session_state.current_workout_logs[ue_name])} live gesichert!", icon="💪")
+            st.toast(f"Satz {len(st.session_state.current_workout_logs[ue_name])} gesichert!", icon="💪")
             st.rerun()
 
         if st.session_state.current_workout_logs[ue_name]:
@@ -183,15 +239,14 @@ if check_password():
                 heute_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
                 st.session_state.kraft_history[ue_name].append({"Datum": heute_datum, "Leistung": saetze_zusammenfassung})
                 st.session_state.current_workout_logs[ue_name] = [] 
-                st.toast("Komplette Übung in Verlauf übertragen!", icon="💾")
+                st.toast("In Verlauf übertragen!", icon="💾")
                 st.rerun()
 
-        # 3. Das geforderte "Ergebnisse"-Untermenü
         with st.expander("📈 Ergebnisse / Alle vergangenen Trainings"):
             df_history = pd.DataFrame(st.session_state.kraft_history[ue_name])
             st.dataframe(df_history, hide_index=True, use_container_width=True)
 
-    # APP LAYOUT RENDERING
+    # APP LAYOUT
     st.title("⚡ PERFORM ALL // ALEC")
     st.write("---")
 
@@ -228,6 +283,14 @@ if check_password():
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
+        
+        # NEU: DIE GESAMTÜBERSICHT FÜR HEUTIGE GARMIN-SÄTZE
+        if g_data.get("raw_strength_sets"):
+            with st.expander("⌚ Live von deiner Garmin-Uhr erfasst (Heute)", expanded=True):
+                st.success("Hier siehst du die Live-Werte deiner Uhr. Du kannst sie unten manuell übertragen oder ergänzen.")
+                for rs in g_data["raw_strength_sets"]:
+                    st.write(rs)
+        
         st.caption("Klappe eine Übung auf, um Sätze live zu loggen oder deine Historie einzusehen.")
         
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
@@ -295,7 +358,6 @@ if check_password():
     with col3:
         st.header("🍽️ Ernährung & Orga")
         
-        # Restbudget-Berechnung
         rem_kcal = max(tagesbedarf["kcal"] - verzehrt_kcal, 0)
         rem_p = max(tagesbedarf["protein"] - verzehrt_protein, 0)
         rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
@@ -308,7 +370,6 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
-        # DIE WOCHENÜBERSICHT
         with st.expander("📊 Wochenübersicht (Makros)"):
             overview_data = [
                 {"Tag": "Montag", "Kcal": 2550, "Protein": "201g", "Carbs": "250g", "Fat": "78g"},
@@ -318,7 +379,6 @@ if check_password():
             ]
             st.dataframe(pd.DataFrame(overview_data), hide_index=True, use_container_width=True)
         
-        # DROPDOWN FÜR WIEDERKEHRENDE MAHLZEITEN
         st.write("---")
         st.subheader("⭐ Wiederkehrende Mahlzeiten")
         fav_choice = st.selectbox("Schnellauswahl Lieblingsgerichte:", list(st.session_state.favorites.keys()))
@@ -335,8 +395,6 @@ if check_password():
                 st.rerun()
         
         st.write("---")
-        
-        # Gemini Foto-Scanner
         st.subheader("📸 Neuen Mahlzeit-Scanner")
         uploaded_file = st.file_uploader("Foto aufnehmen/hochladen...", type=["jpg", "png", "jpeg"])
         
@@ -387,18 +445,16 @@ if check_password():
                     del st.session_state.temp_meal
                     st.rerun()
 
-        # DAS ERNÄHRUNGSPROTOKOLL MIT LÖSCH-X
         if st.session_state.meals_log:
             st.write("---")
             st.markdown("**Heutige Mahlzeiten:**")
             for idx, meal in enumerate(st.session_state.meals_log):
                 m_col1, m_col2 = st.columns([5, 1])
                 m_col1.caption(f"✔️ {meal['name']} ({meal['kcal']} kcal | {meal['protein']}g P)")
-                if m_col2.button("❌", key=f"del_meal_{idx}", help="Diese Mahlzeit löschen"):
+                if m_col2.button("❌", key=f"del_meal_{idx}"):
                     st.session_state.meals_log.pop(idx)
                     st.rerun()
 
-        # Finanzen
         st.write("---")
         st.subheader("💼 Finanzen & Daily Routine")
         st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
