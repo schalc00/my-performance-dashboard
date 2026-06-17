@@ -9,13 +9,22 @@ from google import genai
 # 1. Page Configuration (3 Spalten mit Fokus auf die Mitte)
 st.set_page_config(page_title="Perform All // Alec", page_icon="⚡", layout="wide")
 
-# Minimalistisches CSS für den authentischen "Perform All" Dark-App-Look
+# Exklusives CSS für das "OLED Carbon & Cyber Punk" Dashboard Design
 st.markdown("""
     <style>
-    .main { background-color: #0b0e14; color: #ffffff; }
-    div[data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; color: #00ffcc; }
-    div[data-testid="stMetricLabel"] { font-size: 13px; color: #888888; }
-    .stExpander { background-color: #161b22; border-radius: 8px; margin-bottom: 8px; border: 1px solid #21262d; }
+    /* Hintergrund auf sattes OLED-Schwarz setzen */
+    .main { background-color: #020408; color: #e2e8f0; }
+    
+    /* Premium Tuning für die Metriken (Fett, Neon-Cyan & Tech-Vibe) */
+    div[data-testid="stMetricValue"] { font-size: 30px; font-weight: 900; color: #00f0ff; letter-spacing: -0.5px; }
+    div[data-testid="stMetricLabel"] { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; }
+    
+    /* Veredelte Kacheln mit leuchtender Neon-Carbon-Kante links */
+    .stExpander { background-color: #0b111e; border-radius: 8px; margin-bottom: 10px; border: 1px solid #1e293b; border-left: 4px solid #00f0ff; }
+    
+    /* Styling für Buttons und Registerkarten */
+    .stTabs [data-baseweb="tab"] { color: #94a3b8; font-weight: bold; }
+    .stTabs [aria-selected="true"] { color: #00f0ff !important; border-bottom-color: #00f0ff !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -195,7 +204,7 @@ if check_password():
         
     if "prozis_weight" not in st.session_state: st.session_state.prozis_weight = 102.0
 
-    # DYNAMISCHE REZEPT-DATENBANK
+    # REZEPT-DATENBANK
     recipe_book = {
         "Frühstück 🥞": {
             "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
@@ -213,17 +222,13 @@ if check_password():
             "Sojageschnetzeltes in Pilzrahm": {"kcal": 590, "protein": 53, "carbs": 58, "fat": 11, "zutaten": ["60g Sojaschnetzel", "70g Vollkornnudeln", "200g Champignons", "Leicht-Kochcreme"], "anleitung": "Schnetzel einweichen, ausdrücken, kross braten. Pilze und Creme dazu."},
             "Protein-Bowl mit Falafel": {"kcal": 580, "protein": 44, "carbs": 65, "fat": 14, "zutaten": ["200g Hüttenkäse light", "100g Falafel", "60g Couscous", "Gemüse"], "anleitung": "Couscous quellen lassen. Mit Hüttenkäse, Gemüse und Falafel anrichten."}
         },
-        "Knackige Salate 🥗": {
-            "Thunfisch-Kichererbsen-Power-Salat": {"kcal": 550, "protein": 48, "carbs": 42, "fat": 18, "zutaten": ["1 Dose Thunfisch", "150g Kichererbsen", "100g Gurke", "50g Feta light", "10ml Olivenöl"], "anleitung": "Kichererbsen abspülen. Thunfisch, Gemüse und Feta light würfeln. Mit Olivenöl und Zitronensaft vermengen."},
-            "Hähnchen-Avocado-Performance-Salat": {"kcal": 610, "protein": 54, "carbs": 20, "fat": 26, "zutaten": ["200g Hähnchenbrust", "80g Avocado", "150g Mix-Salat", "100g Kirschtomaten"], "anleitung": "Hähnchenbrust anbraten und schneiden. Avocado würfeln. Salat waschen, mit Fleisch, Avocado und Dressing servieren."}
-        },
         "Snacks 🍫": {
             "Magerquark-Flavour-Bowl": {"kcal": 290, "protein": 42, "carbs": 16, "fat": 1, "zutaten": ["300g Magerquark", "50ml Wasser", "Flavour Drops", "50g Himbeeren"], "anleitung": "Quark mit Wasser und Drops cremig schlagen. Himbeeren unterheben."},
             "Beef Jerky Handvoll": {"kcal": 150, "protein": 28, "carbs": 3, "fat": 2, "zutaten": ["50g Beef Jerky"], "anleitung": "Snackfertig aus der Packung für maximalen Muskelschutz nach dem Training."}
         }
     }
 
-    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF PROZIS-GEWICHT
+    # AUTOMATISCHE MAKROANPASSUNG (PROZIS WAAGE LOOP)
     w_aktuell = st.session_state.prozis_weight
     tagesbedarf = {
         "kcal": int(w_aktuell * 25.5),      
@@ -262,7 +267,7 @@ if check_password():
     if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
     if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE WORKOUT ENGINE
+    # WORKOUT MECHANIK
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -294,15 +299,16 @@ if check_password():
         with st.expander("📈 Ergebnisse / Historie"):
             st.dataframe(pd.DataFrame(st.session_state.kraft_history[ue_name]), hide_index=True, use_container_width=True)
 
-    # LAYOUT OVERVIEW
+    # 3-SPALTEN LAYOUT (Ernährung links, Training mittig, Garmin rechts)
     col1, col2, col3 = st.columns([1.1, 1.5, 1], gap="large")
 
     # ==========================================
-    # SPALTE 1: ERNÄHRUNG & ORGA (VORNE AN)
+    # SPALTE 1: ERNÄHRUNG & ORGA (PROMINENT LINKS)
     # ==========================================
     with col1:
         st.header("🍽️ Ernährung & Orga")
         
+        # Permanent offen
         st.metric("Kcal Restbudget", f"{rem_kcal} kcal", f"Ziel: {tagesbedarf['kcal']}")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
@@ -373,13 +379,8 @@ if check_password():
                         st.session_state.meals_log.pop(idx)
                         st.rerun()
 
-        # STANDALONE ROUTINE (Ausgelagert aus Finanzen)
-        st.write("---")
-        st.subheader("✅ Daily Routine")
-        st.checkbox("Handball-Dehnprogramm absolviert (15 Min)")
-
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN (MITTE)
+    # SPALTE 2: TRAININGSPLAN & GEINTEGRIERTES DEHNEN (MITTE)
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -388,20 +389,28 @@ if check_password():
                 for rs in g_data["raw_strength_sets"]: st.write(rs)
         
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
+        
         with tab1:
             st.subheader("Oberkörper Grundkraft")
+            # NEU: INTEGRIERTES MOBILITY/DEHN-UPGRADE
+            st.checkbox("🧘 Schulter-Mobility & Brust-Dehnen (Warm-up vor Bankdrücken)")
+            st.write("---")
             with st.expander("🏋️ Bankdrücken (4 Sätze x 6 Wdh.)"): render_exercise_engine("Bankdrücken", 85.0, 6)
             with st.expander("🏋️ Klimmzüge mit Zusatzgewicht"): render_exercise_engine("Klimmzüge", 10.0, 6)
             with st.expander("🏋️ Dips / Barrenstütz"): render_exercise_engine("Dips", 0.0, 8)
             with st.expander("🏋️ Langhantelrudern vorgebeugt"): render_exercise_engine("Langhantelrudern", 70.0, 8)
             with st.expander("🏋️ Face Pulls für Schulterstabilität"): render_exercise_engine("Face Pulls", 25.0, 12)
+            
         with tab2:
             st.subheader("Handball Leg Day (Explosivität & Gelenkschutz)")
+            st.checkbox("🧘 Hüftöffner & Knie-Dehnprogramm (Erhöht die Stabilität bei Täuschungen)")
+            st.write("---")
             with st.expander("🏋️ Bulgarian Split Squats"): render_exercise_engine("Bulgarian Split Squats", 20.0, 8)
             with st.expander("🏋️ Trap-Bar Kreuzheben"): render_exercise_engine("Trap-Bar Kreuzheben", 120.0, 6)
             with st.expander("🏋️ Box Jumps / Rebound-Sprünge"): render_exercise_engine("Box Jumps", 60, 5)
             with st.expander("🏋️ Lateral Lunges"): render_exercise_engine("Lateral Lunges", 16.0, 8)
             with st.expander("🏋️ Nordic Hamstring Curls"): render_exercise_engine("Nordic Hamstring Curls", 0.0, 6)
+            
         with tab3:
             st.subheader("Oberkörper Volumen (Hypertrophie)")
             with st.expander("🏋️ Schrägbankdrücken mit Kurzhanteln"): render_exercise_engine("Schrägbankdrücken KH", 30.0, 10)
@@ -409,20 +418,31 @@ if check_password():
             with st.expander("🏋️ Seitheben am Kabelzug"): render_exercise_engine("Seitheben", 12.5, 12)
             with st.expander("🏋️ Incline Bicep Curls"): render_exercise_engine("Incline Curls", 15.0, 12)
             with st.expander("🏋️ Tricep Rope Pushdowns"): render_exercise_engine("Trizepsdrücken", 30.0, 12)
+            # NEU: GEFORDERTES FINISH STRETCHING
+            st.write("---")
+            st.checkbox("🧘 Post-Workout Dehnprogramm (Nacken & Lats regenerieren)")
+            
         with tab4:
             st.subheader("Schnellkraft & Rumpfstabilität")
+            # NEU: GEFORDERTES PRE-STRETCHING FÜR DIE WURFKRAFT
+            st.checkbox("🧘 Brustwirbelsäulen-Rotation & Core-Mobility (Vor dem Schnellkraftwurf)")
+            st.write("---")
             with st.expander("🏋️ Power Cleans / Umsetzen"): render_exercise_engine("Power Cleans", 60.0, 3)
             with st.expander("🏋️ Medizinball-Rotationswürfe"): render_exercise_engine("Medizinball-Würfe", 6.0, 8)
             with st.expander("🏋️ Romanian Deadlifts"): render_exercise_engine("Romanian Deadlifts", 90.0, 10)
             with st.expander("🏋️ Ab-Wheel Rollouts"): render_exercise_engine("Ab-Wheel Rollouts", 0.0, 10)
             with st.expander("🏋️ Pallof Press am Kabelzug"): render_exercise_engine("Pallof Press", 20.0, 12)
+            
         with tab5:
             st.subheader("Handball Ausdauer")
             ausdauer_wahl = st.radio("Cardio-Session:", ["Zone 2 Lauf (45-60 Min.)", "Handball Shuttle Runs (15x 20m)"])
             st.checkbox(f"Session erledigt: {ausdauer_wahl}")
+            # NEU: COOL-DOWN STRETCHING INKLUSIVE BLACKROLL
+            st.write("---")
+            st.checkbox("🧘 Cool-Down Dehnen & Blackroll (Beine & Waden ausrollen gegen Muskelkater)")
 
     # ==========================================
-    # SPALTE 3: GARMIN VITAL-HUB
+    # SPALTE 3: GARMIN VITAL-HUB (RECHTS)
     # ==========================================
     with col3:
         st.header("📊 Garmin Hub")
