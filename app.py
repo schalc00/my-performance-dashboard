@@ -43,7 +43,7 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # ERWEITERTER GARMIN DATENABRUF (Inklusive Tiefen-Analyse für Krafttraining)
+    # REPARIERTER & ERWÄHLTER GARMIN DATENABRUF
     @st.cache_data(ttl=300)
     def fetch_garmin_data():
         try:
@@ -53,11 +53,35 @@ if check_password():
             berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
             today = berlin_time.date().isoformat()
             
-            summary = client.get_user_summary(today)
+            # Verwende die absolut stabilen Standard-Endpunkte
+            stats = client.get_stats(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
-            activities = client.get_activities(0, 5) # Letzten 5 Einheiten
+            activities = client.get_activities(0, 5)
             
+            # --- ERWEITERTE GESUNDHEITSDATEN (VO2 Max, Training Status etc.) ---
+            vo2_max = "--"
+            recovery_time = "--"
+            race_5k = "--"
+            training_status = "--"
+            try:
+                t_status = client.get_training_status(today)
+                if t_status:
+                    vo2_max_raw = t_status.get("mostRecentRunVo2Max", {}).get("genericValue") or t_status.get("vo2Max")
+                    vo2_max = f"{round(vo2_max_raw, 1)}" if vo2_max_raw else "--"
+                    
+                    rec_hours = t_status.get("recoveryTimeInHours") or t_status.get("recoveryTime")
+                    recovery_time = f"{rec_hours} Std" if rec_hours else "--"
+                    
+                    training_status = t_status.get("trainingStatusDTO", {}).get("trainingStatus") or t_status.get("trainingStatus", "--")
+                    
+                    preds = t_status.get("racePredictions", {}) or t_status.get("racePredictionDTO", {})
+                    if preds:
+                        race_5k = preds.get("fiveK", {}).get("displayTime") or preds.get("fiveKTime", "--")
+            except:
+                pass
+
+            # Workouts extrahieren
             workout_list = []
             garmin_strength_today = {}
             raw_strength_sets = []
@@ -69,19 +93,16 @@ if check_password():
                     w_cal = round(act.get('calories', 0))
                     workout_list.append(f"💪 {w_type}: {w_dur} Min ({w_cal} kcal)")
                     
-                    # Wenn heute ein Krafttraining absolviert wurde, ziehen wir uns die exakten Sätze!
                     act_date = act.get('startTimeLocal', '')[:10]
                     if w_type == 'strength_training' and act_date == today:
                         act_id = act.get('activityId')
                         try:
-                            # Holt die Details der Hebe-Session (Sätze, Reps, Kilos)
                             details = client.get_activity_details(act_id)
                             sets = details.get('sets', []) or details.get('summaryDTO', {}).get('sets', [])
                             
                             for idx, s in enumerate(sets):
                                 reps = s.get('reps', 0)
                                 weight = s.get('weight', 0)
-                                # Garmin speichert Gewichte manchmal in Gramm
                                 if weight > 1000:
                                     weight = round(weight / 1000, 1)
                                 else:
@@ -92,7 +113,6 @@ if check_password():
                                     set_str = f"{weight} kg x {reps} Wdh."
                                     raw_strength_sets.append(f"Satz {idx+1}: {s.get('exerciseName', 'Set')} -> {set_str}")
                                     
-                                    # Automatisches Keyword-Routing in Alec's Trainingsplan
                                     matched_key = None
                                     if "bench" in ex_name: matched_key = "Bankdrücken"
                                     elif "klimm" in ex_name or "pull" in ex_name: matched_key = "Klimmzüge"
@@ -123,15 +143,16 @@ if check_password():
             sleep_hours = round(sleep_dto.get("sleepTimeSeconds", 0) / 3600, 1) if sleep_dto else 0
             sleep_score = sleep_dto.get("sleepScore", "--") if sleep_dto else "--"
             
-            steps = summary.get("totalSteps") or summary.get("steps") or 0
-            step_goal = summary.get("stepsGoal") or 10000
-            active_cal = round(summary.get("activeCalories", 0))
-            bmr_cal = round(summary.get("bmrCalories", 0))
-            total_cal = round(summary.get("totalCalories", 0))
-            distance_km = round(summary.get("distanceInMeters", 0) / 1000, 2)
-            floors = summary.get("floorsClimbed", 0)
+            # Präzises Auslesen aus dem stabilen stats-Paket
+            steps = stats.get("steps") or stats.get("totalSteps") or 0
+            step_goal = stats.get("stepsGoal") or 10000
+            active_cal = round(stats.get("activeCalories", 0))
+            bmr_cal = round(stats.get("bmrCalories", 1900))
+            total_cal = round(stats.get("totalCalories", active_cal + bmr_cal))
+            distance_km = round(stats.get("distanceInMeters", 0) / 1000, 2)
+            floors = stats.get("floorsClimbed", 0)
             
-            stress_avg = summary.get("averageStressLevel", "--")
+            stress_avg = stats.get("averageStressLevel", "--")
             if stress_avg == -1 or stress_avg == 0:
                 stress_avg = "--"
 
@@ -150,34 +171,37 @@ if check_password():
                 "floors": floors,
                 "sleep_duration": sleep_hours,
                 "sleep_score": sleep_score,
-                "stress_avg": stress_avg
+                "stress_avg": stress_avg,
+                "vo2_max": vo2_max,
+                "recovery_time": recovery_time,
+                "race_5k": race_5k,
+                "training_status": training_status
             }
             return garmin_pack, True
         except:
             fallback = {
                 "rhr": "--", "max_hr": "--", "workout_list": ["Synchronisiere..."],
                 "garmin_strength_today": {}, "raw_strength_sets": [],
-                "steps": 0, "step_goal": 10000, "active_cal": 0, "bmr_cal": 0, "total_cal": 0,
-                "distance_km": 0.0, "floors": 0, "sleep_duration": 0, "sleep_score": "--", "stress_avg": "--"
+                "steps": 0, "step_goal": 10000, "active_cal": 0, "bmr_cal": 1900, "total_cal": 1900,
+                "distance_km": 0.0, "floors": 0, "sleep_duration": 0, "sleep_score": "--", "stress_avg": "--",
+                "vo2_max": "--", "recovery_time": "--", "race_5k": "--", "training_status": "--"
             }
             return fallback, False
 
     g_data, garmin_success = fetch_garmin_data()
 
     # ==========================================
-    # DATEN-CLEANER GEGEN UNERWÜNSCHTE CRASHES
+    # ABSICHERUNG GEGEN ALTE SPEICHERRESTE
     # ==========================================
     if "meals_log" not in st.session_state:
         st.session_state.meals_log = []
     else:
         st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
 
+    # HIER SIND JETZT ALLE VORGEFERTIGTEN REZEPTE GELÖSCHT
     if "favorites" not in st.session_state:
         st.session_state.favorites = {
-            "--- Bitte wählen ---": None,
-            "Alec's Standard Frühstück (Haferflocken & Protein)": {"kcal": 580, "protein": 45, "carbs": 75, "fat": 10},
-            "Post-Workout Shake (High Protein)": {"kcal": 240, "protein": 35, "carbs": 15, "fat": 2},
-            "Standard Hähnchen-Reis-Pfanne": {"kcal": 720, "protein": 55, "carbs": 90, "fat": 12}
+            "--- Bitte wählen ---": None
         }
 
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
@@ -196,17 +220,14 @@ if check_password():
 
     if "kraft_history" not in st.session_state:
         st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
-        st.session_state.kraft_history["Bankdrücken"] = [{"Datum": "15.06.", "Leistung": "85.0 kg x 6, 6, 5"}]
-        st.session_state.kraft_history["Trap-Bar Kreuzheben"] = [{"Datum": "16.06.", "Leistung": "120.0 kg x 6, 6, 6"}]
 
     if "current_workout_logs" not in st.session_state:
         st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE CORE ENGINE: TRACKING ENGINE MIT GARMIN INTERACTION
+    # TRACKING ENGINE MIT LIVE FEEDBACK & LÖSCHFUNKTION
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         
-        # NEU: Integrierte Garmin-Zeile direkt in der jeweiligen Übung
         g_today = g_data.get("garmin_strength_today", {})
         if ue_name in g_today:
             st.info(f"⌚ Garmin Live-Tracker heute: {', '.join(g_today[ue_name])}")
@@ -264,7 +285,7 @@ if check_password():
         
         st.write("---")
         st.subheader("🏃 Aktivität")
-        st.metric("Schritte heute", f"{g_data['steps']:,}")
+        st.metric("Schritte heute", f"{g_data['steps']:",}")
         step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
         st.progress(step_perc)
         
@@ -273,6 +294,13 @@ if check_password():
         st.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100", f"{g_data['sleep_duration']} Std Dauer")
         st.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm")
         
+        # NEU: DIE HIER GEFORDERTEN ERWEITERTEN LEISTUNGSWERTE (Einklappbar)
+        with st.expander("📈 Erweiterte Leistungsdaten"):
+            st.metric("Ausdauerwert (VO2 Max)", f"{g_data['vo2_max']} ml/min/kg")
+            st.metric("Erholungszeit", f"{g_data['recovery_time']}")
+            st.metric("Status / Bereitschaft", f"{g_data['training_status']}")
+            st.metric("Geschätzte 5 km Zeit", f"{g_data['race_5k']} Min")
+
         st.write("---")
         st.subheader("📝 Letzte Aktivitäten")
         for w in g_data['workout_list']:
@@ -284,10 +312,9 @@ if check_password():
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
         
-        # NEU: DIE GESAMTÜBERSICHT FÜR HEUTIGE GARMIN-SÄTZE
         if g_data.get("raw_strength_sets"):
             with st.expander("⌚ Live von deiner Garmin-Uhr erfasst (Heute)", expanded=True):
-                st.success("Hier siehst du die Live-Werte deiner Uhr. Du kannst sie unten manuell übertragen oder ergänzen.")
+                st.success("Hier siehst du die Live-Werte deiner Uhr. Du kannst sie unten manuell eintragen oder anpassen.")
                 for rs in g_data["raw_strength_sets"]:
                     st.write(rs)
         
@@ -445,6 +472,7 @@ if check_password():
                     del st.session_state.temp_meal
                     st.rerun()
 
+        # DAS ERNÄHRUNGSPROTOKOLL MIT LÖSCH-X
         if st.session_state.meals_log:
             st.write("---")
             st.markdown("**Heutige Mahlzeiten:**")
@@ -455,6 +483,7 @@ if check_password():
                     st.session_state.meals_log.pop(idx)
                     st.rerun()
 
+        # Finanzen
         st.write("---")
         st.subheader("💼 Finanzen & Daily Routine")
         st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
