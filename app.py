@@ -30,21 +30,24 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # ERWEITERTER GARMIN DATENABRUF (Cached für 15 Minuten)
-    @str.cache_data(ttl=900)
+# UPGRADED GARMIN DATENABRUF (Mit Sicherheitsnetz für Keys & Zeitzone)
+    @str.cache_data(ttl=600) # Auf 10 Minuten verkürzt
     def fetch_garmin_data():
         try:
             client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
             client.login()
-            today = date.today().isoformat()
             
-            # Verschiedene Garmin-Datenpakete abrufen
+            # Holt das exakte Datum basierend auf der deutschen Zeitzone (verhindert den Mitternachts-Bug)
+            import datetime
+            import zoneinfo
+            berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
+            today = berlin_time.date().isoformat()
+            
             stats = client.get_stats(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
             activities = client.get_activities(0, 1)
             
-            # Letztes Workout extrahieren
             last_workout = "Kein Workout heute getrackt"
             if activities:
                 w_type = activities[0].get('activityType', {}).get('typeKey', 'Workout')
@@ -52,36 +55,41 @@ if check_password():
                 w_cal = round(activities[0].get('calories', 0))
                 last_workout = f"{w_type}: {w_dur} Min ({w_cal} kcal)"
             
-            # Schlafdaten extrahieren
             sleep_dto = sleep_data.get("dailySleepDTO", {}) if sleep_data else {}
             sleep_hours = round(sleep_dto.get("sleepTimeSeconds", 0) / 3600, 1) if sleep_dto else 0
             sleep_score = sleep_dto.get("sleepScore", "--") if sleep_dto else "--"
             
-            # Daten-Dictionary bauen
+            # --- HIER IST DAS SICHERHEITSNETZ FÜR DIE KEYS ---
+            # Schritte auslesen (probiert verschiedene bekannte Garmin-Bezeichnungen)
+            steps_value = stats.get("steps") or stats.get("totalSteps") or stats.get("summary", {}).get("steps", 0)
+            
+            # Aktiv-Kalorien auslesen
+            active_cal_value = stats.get("activeCalories") or stats.get("activeCaloriesBurned") or stats.get("summary", {}).get("activeCalories", 0)
+            
+            # Gesamt-Kalorien auslesen
+            total_cal_value = stats.get("totalCalories") or stats.get("summary", {}).get("totalCalories", 2500)
+
             garmin_pack = {
                 "rhr": heart_rates.get("restingHeartRate", "--"),
                 "max_hr": heart_rates.get("maxHeartRate", "--"),
                 "last_workout": last_workout,
-                "steps": stats.get("steps", 0),
-                "step_goal": stats.get("stepsGoal", 10000),
-                "active_cal": round(stats.get("activeCalories", 0)),
-                "total_cal": round(stats.get("totalCalories", 0)),
-                "intensity_minutes": stats.get("intensityMinutesGoalDelta", 0), # Intensitätsminuten
+                "steps": int(steps_value) if steps_value else 0,
+                "step_goal": stats.get("stepsGoal") or stats.get("summary", {}).get("stepsGoal", 10000),
+                "active_cal": int(active_cal_value) if active_cal_value else 0,
+                "total_cal": int(total_cal_value) if total_cal_value else 2200,
                 "sleep_duration": sleep_hours,
                 "sleep_score": sleep_score,
                 "deep_sleep": round(sleep_dto.get("deepSleepSeconds", 0) / 60) if sleep_dto else 0,
             }
             return garmin_pack, True
         except Exception as e:
-            # Fallback falls API streikt
+            # Fallback bei Serverausfall
             fallback = {
-                "rhr": 45, "max_hr": 185, "last_workout": "Handball-Training (90 min)",
-                "steps": 8420, "step_goal": 10000, "active_cal": 650, "total_cal": 2850,
-                "intensity_minutes": 45, "sleep_duration": 7.5, "sleep_score": 82, "deep_sleep": 90
+                "rhr": 45, "max_hr": 185, "last_workout": "Fehler beim API-Inhalt",
+                "steps": 0, "step_goal": 10000, "active_cal": 0, "total_cal": 2000,
+                "sleep_duration": 0, "sleep_score": "--", "deep_sleep": 0
             }
             return fallback, False
-
-    g_data, garmin_success = fetch_garmin_data()
 
     # ERNÄHRUNGS-LOGIK
     if "verzehrt" not in str.session_state:
