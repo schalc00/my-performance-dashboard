@@ -190,17 +190,22 @@ if check_password():
     g_data, garmin_success = fetch_garmin_data()
 
     # ==========================================
-    # DATEN-CLEANER FÜR MAHLZEITEN
+    # INITIALISIERUNGEN & CLEANER (SESSION STATE)
     # ==========================================
     if "meals_log" not in st.session_state:
         st.session_state.meals_log = []
     else:
         st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
 
-    # REZEPTE GELÖSCHT – JETZT VOLLKOMMEN LEER FÜR DICH
+    # Rezeptliste komplett leer wie gefordert
     if "favorites" not in st.session_state:
-        st.session_state.favorites = {
-            "--- Bitte wählen ---": None
+        st.session_state.favorites = {"--- Bitte wählen ---": None}
+
+    # NEU: Strukturierter Speicher für deinen KI-Wochenplan
+    if "ki_wochenplan" not in st.session_state:
+        st.session_state.ki_wochenplan = {
+            "Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], 
+            "Freitag": [], "Samstag": [], "Sonntag": []
         }
 
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
@@ -223,7 +228,7 @@ if check_password():
     if "current_workout_logs" not in st.session_state:
         st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # WORKOUT MECHANIK (Sätze & Live-Feedback)
+    # THE WORKOUT ENGINE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         
@@ -266,7 +271,7 @@ if check_password():
             df_history = pd.DataFrame(st.session_state.kraft_history[ue_name])
             st.dataframe(df_history, hide_index=True, use_container_width=True)
 
-    # APP LAYOUT GENERIERUNG
+    # APP LAYOUT
     col1, col2, col3 = st.columns([1, 1.5, 1.1], gap="large")
 
     # ==========================================
@@ -290,7 +295,6 @@ if check_password():
         st.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100", f"{g_data['sleep_duration']} Std Dauer")
         st.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm")
         
-        # AUSGEBAUTE LEISTUNGSDATEN (VO2 MAX, 5K, ERHOLUNG)
         with st.expander("📈 Erweiterte Leistungsdaten"):
             st.metric("Ausdauerwert (VO2 Max)", f"{g_data['vo2_max']} ml/min/kg")
             st.metric("Erholungszeit", f"{g_data['recovery_time']}")
@@ -376,7 +380,7 @@ if check_password():
             st.checkbox(f"Session erfolgreich beendet: {ausdauer_wahl}")
 
     # ==========================================
-    # SPALTE 3: NUTRITION & DROPDOWN & FINANZEN
+    # SPALTE 3: NUTRITION & KI-WOCHENPLANER
     # ==========================================
     with col3:
         st.header("🍽️ Ernährung & Orga")
@@ -393,14 +397,71 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
-        with st.expander("📊 Wochenübersicht (Makros)"):
+        with st.expander("📊 Tagesübersicht Makros (Woche)"):
             overview_data = [
                 {"Tag": "Montag", "Kcal": 2550, "Protein": "201g", "Carbs": "250g", "Fat": "78g"},
                 {"Tag": "Dienstag", "Kcal": 2620, "Protein": "208g", "Carbs": "265g", "Fat": "81g"},
-                {"Tag": "Mittwoch", "Kcal": 2480, "Protein": "195g", "Carbs": "240g", "Fat": "75g"},
                 {"Tag": "Heute (Live)", "Kcal": verzehrt_kcal, "Protein": f"{verzehrt_protein}g", "Carbs": f"{verzehrt_carbs}g", "Fat": f"{verzehrt_fat}g"}
             ]
             st.dataframe(pd.DataFrame(overview_data), hide_index=True, use_container_width=True)
+
+        # NEU: DEIN INTERAKTIVER KI-WOCHENPLAN ZUM ABHAKEN
+        with st.expander("📅 Dein KI-Wochenplan (Zum Abhaken)", expanded=True):
+            wochenplan_leer = True
+            for tag, m_liste in st.session_state.ki_wochenplan.items():
+                if m_liste:
+                    wochenplan_leer = False
+                    st.markdown(f"**{tag}**")
+                    for m_idx, meal in enumerate(m_liste):
+                        w_col1, w_col2 = st.columns([5, 1])
+                        # Checkbox zum Erledigen
+                        checked = w_col1.checkbox(meal["label"], value=meal["done"], key=f"chk_{tag}_{m_idx}")
+                        if checked != meal["done"]:
+                            st.session_state.ki_wochenplan[tag][m_idx]["done"] = checked
+                            st.rerun()
+                        # Löschen-Button aus der Woche
+                        if w_col2.button("🗑️", key=f"del_wp_{tag}_{m_idx}"):
+                            st.session_state.ki_wochenplan[tag].pop(m_idx)
+                            st.rerun()
+                        st.caption(f"*Zubereitung:* {meal['instruction']}")
+            if wochenplan_leer:
+                st.caption("Noch keine Mahlzeiten eingeplant. Nutze den KI-Planer unten!")
+
+        # NEU: DER INTERAKTIVE KI-REZEPT-PLANER (SPRACH-/TEXTSTEUERUNG)
+        st.write("---")
+        st.subheader("🤖 KI Rezept-Planer & Assistent")
+        st.caption("Nutze die Mikrofon-Taste deiner Handy-Tastatur, um Rezepte einzusprechen!")
+        prompt_input = st.text_input("Was möchtest du kochen? (z.B. Protein Pancakes)", key="ki_prompt_box")
+        tag_auswahl = st.selectbox("Für welchen Wochentag einplanen?", list(st.session_state.ki_wochenplan.keys()))
+        
+        if st.button("Rezept suchen & einplanen 🪄"):
+            if prompt_input:
+                with st.spinner("Gemini analysiert und berechnet..."):
+                    try:
+                        prompt_config = (
+                            f"Der Nutzer wiegt 102kg und befindet sich in einer harten Handball-Vorbereitung. "
+                            f"Finde ein passendes Rezept für: '{prompt_input}'. "
+                            f"Antworte exakt in diesem Format, getrennt durch das Wort '---TRENNUNG---':\n"
+                            f"Gerichtname [Kcal: Zahl | P: Zahlg | C: Zahlg | F: Zahlg]\n"
+                            f"---TRENNUNG---\n"
+                            f"Kurze, knackige Kochanleitung in maximal 2 Sätzen."
+                        )
+                        response = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=prompt_config)
+                        teile = response.text.strip().split("---TRENNUNG---")
+                        
+                        g_label = teile[0].strip()
+                        g_inst = teile[1].strip() if len(teile) > 1 else "Keine spezifische Anleitung."
+                        
+                        # In den Wochenplan packen
+                        st.session_state.ki_wochenplan[tag_auswahl].append({
+                            "label": g_label,
+                            "instruction": g_inst,
+                            "done": False
+                        })
+                        st.toast(f"Eingeplant für {tag_auswahl}!", icon="📅")
+                        st.rerun()
+                    except:
+                        st.error("Fehler beim KI-Abruf. Bitte noch einmal versuchen.")
         
         st.write("---")
         st.subheader("⭐ Wiederkehrende Mahlzeiten")
@@ -414,7 +475,6 @@ if check_password():
                     "name": fav_choice, "kcal": meal_data["kcal"], "protein": meal_data["protein"], 
                     "carbs": meal_data["carbs"], "fat": meal_data["fat"]
                 })
-                st.toast(f"Favorit hinzugefügt!", icon="🍽️")
                 st.rerun()
         
         st.write("---")
@@ -445,7 +505,7 @@ if check_password():
                         
                         st.session_state.temp_meal = {"name": name, "kcal": kcal, "protein": p, "carbs": c, "fat": f}
                     except:
-                        st.error("Fehler bei der Analyse. Versuch es noch mal.")
+                        st.error("Fehler bei der Analyse.")
             
             if "temp_meal" in st.session_state:
                 st.markdown("### 🔍 Bestätigen:")
@@ -464,7 +524,6 @@ if check_password():
                     })
                     if add_to_favs:
                         st.session_state.favorites[edit_name] = {"kcal": edit_kcal, "protein": edit_p, "carbs": edit_c, "fat": edit_f}
-                    st.toast("Mahlzeit erfolgreich eingetragen!", icon="✅")
                     del st.session_state.temp_meal
                     st.rerun()
 
@@ -478,6 +537,7 @@ if check_password():
                     st.session_state.meals_log.pop(idx)
                     st.rerun()
 
+        # Finanzen
         st.write("---")
         st.subheader("💼 Finanzen & Daily Routine")
         st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
