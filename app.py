@@ -183,15 +183,26 @@ if check_password():
 
     g_data, garmin_success = fetch_garmin_data()
 
+    # KORREKTUR: Berechnung für den Schrittbalken direkt nach dem Laden sichern
+    step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
+
     # ==========================================
     # INITIALISIERUNGEN (SESSION STATE)
     # ==========================================
-    if "meals_log" not in st.session_state: st.session_state.meals_log = []
-    if "favorites" not in st.session_state: st.session_state.favorites = {"--- Bitte wählen ---": None}
+    if "meals_log" not in st.session_state:
+        st.session_state.meals_log = []
+    else:
+        st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
+
+    if "favorites" not in st.session_state:
+        st.session_state.favorites = {"--- Bitte wählen ---": None}
+
     if "ki_wochenplan" not in st.session_state:
-        st.session_state.ki_wochenplan = {"Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], "Freitag": [], "Samstag": [], "Sonntag": []}
+        st.session_state.ki_wochenplan = {
+            "Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], 
+            "Freitag": [], "Samstag": [], "Sonntag": []
+        }
         
-    # Finanzen Session State zur Punkte-Überwachung
     if "miles_collected" not in st.session_state: st.session_state.miles_collected = 14200
     if "payback_points" not in st.session_state: st.session_state.payback_points = 8450
 
@@ -201,7 +212,7 @@ if check_password():
     tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
     heute_wochentag = tage_de[berlin_time.weekday()]
 
-    # Live-Verrechnung Essen
+    # Live-Verrechnung der heutigen Makros
     verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
     verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
     verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
@@ -219,27 +230,67 @@ if check_password():
     rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
     rem_f = max(tagesbedarf["fat"] - verzehrt_fat, 0)
 
-    # REZEPTKATALOG
+    # REZEPTKATALOG (CHEFKOCH SELECTION)
     recipe_book = {
         "Frühstück 🥞": {
-            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
-            "Herzhaftes Rührei-Strammer-Max": {"kcal": 600, "protein": 55, "carbs": 40, "fat": 22, "zutaten": ["3 ganze Eier", "100g flüssiges Eiklar", "2 Scheiben Roggenbrot", "50g Hähnchenbrust"], "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot mit Hähnchenbrust servieren."}
+            "Power-Oatmeal (High-Protein)": {
+                "kcal": 680, "protein": 52, "carbs": 85, "fat": 13,
+                "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren"],
+                "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."
+            },
+            "Herzhaftes Rührei-Strammer-Max": {
+                "kcal": 600, "protein": 55, "carbs": 40, "fat": 22,
+                "zutaten": ["3 ganze Eier", "100g flüssiges Eiklar", "2 Scheiben Roggenbrot", "50g Hähnchenbrust"],
+                "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot mit Hähnchenbrust servieren."
+            }
         },
         "Fleischgerichte 🍗": {
-            "Crispy Airfryer Chicken": {"kcal": 650, "protein": 62, "carbs": 65, "fat": 12, "zutaten": ["250g Hähnchenbrust", "300g Süßkartoffel", "150g Brokkoli", "10ml Olivenöl"], "anleitung": "Hähnchen und Kartoffeln würfeln, ölen, würzen. 18 Min bei 180°C in den Airfryer."},
-            "Puten-Brokkoli-Pfanne (Asia)": {"kcal": 620, "protein": 65, "carbs": 60, "fat": 10, "zutaten": ["250g Putenbrust", "200g Brokkoli", "80g Basmatireis", "Sojasauce"], "anleitung": "Reis kochen. Pute scharf anbraten, Brokkoli und Sojasauce mitdünsten."}
+            "Crispy Airfryer Chicken": {
+                "kcal": 650, "protein": 62, "carbs": 65, "fat": 12,
+                "zutaten": ["250g Hähnchenbrust", "300g Süßkartoffel", "150g Brokkoli", "10ml Olivenöl"],
+                "anleitung": "Hähnchen und Kartoffeln würfeln, ölen, würzen. 18 Min bei 180°C in den Airfryer."
+            },
+            "Puten-Brokkoli-Pfanne (Asia)": {
+                "kcal": 620, "protein": 65, "carbs": 60, "fat": 10,
+                "zutaten": ["250g Putenbrust", "200g Brokkoli", "80g Basmatireis", "Sojasauce"],
+                "anleitung": "Reis kochen. Pute scharf anbraten, Brokkoli und Sojasauce mitdünsten."
+            }
         },
         "Fischgerichte 🐟": {
-            "Gebackenes Lachsfilet": {"kcal": 640, "protein": 48, "carbs": 55, "fat": 22, "zutaten": ["200g Lachsfilet", "70g Quinoa", "150g grüner Spargel", "Zitrone"], "anleitung": "Quinoa kochen. Lachs mit Zitrone würzen und 15 Min bei 180°C backen."},
-            "Knoblauch-Chili-Garnelen": {"kcal": 580, "protein": 50, "carbs": 75, "fat": 8, "zutaten": ["250g Riesengarnelen", "80g Jasminreis", "Paprika", "Sesamöl"], "anleitung": "Garnelen mit Knoblauch, Chili und Gemüse im Sesamöl scharf pfannenrühren."}
+            "Gebackenes Lachsfilet": {
+                "kcal": 640, "protein": 48, "carbs": 55, "fat": 22,
+                "zutaten": ["200g Lachsfilet", "70g Quinoa", "150g grüner Spargel", "Zitrone"],
+                "anleitung": "Quinoa kochen. Lachs mit Zitrone würzen und 15 Min bei 180°C backen."
+            },
+            "Knoblauch-Chili-Garnelen": {
+                "kcal": 580, "protein": 50, "carbs": 75, "fat": 8,
+                "zutaten": ["250g Riesengarnelen", "80g Jasminreis", "Paprika", "Sesamöl"],
+                "anleitung": "Garnelen mit Knoblauch, Chili und Gemüse im Sesamöl scharf pfannenrühren."
+            }
         },
         "Vegetarisch 🌱": {
-            "Sojageschnetzeltes in Pilzrahm": {"kcal": 590, "protein": 53, "carbs": 58, "fat": 11, "zutaten": ["60g Sojaschnetzel", "70g Vollkornnudeln", "200g Champignons", "Leicht-Kochcreme"], "anleitung": "Schnetzel einweichen, ausdrücken, kross braten. Pilze und Creme dazu."},
-            "Protein-Bowl mit Falafel": {"kcal": 580, "protein": 44, "carbs": 65, "fat": 14, "zutaten": ["200g Hüttenkäse light", "100g Falafel", "60g Couscous", "Gemüse"], "anleitung": "Couscous quellen lassen. Mit Hüttenkäse, Gemüse und Falafel anrichten."}
+            "Sojageschnetzeltes in Pilzrahm": {
+                "kcal": 590, "protein": 53, "carbs": 58, "fat": 11,
+                "zutaten": ["60g Sojaschnetzel", "70g Vollkornnudeln", "200g Champignons", "Leicht-Kochcreme"],
+                "anleitung": "Schnetzel einweichen, ausdrücken, kross braten. Pilze und Creme dazu."
+            },
+            "Protein-Bowl mit Falafel": {
+                "kcal": 580, "protein": 44, "carbs": 65, "fat": 14,
+                "zutaten": ["200g Hüttenkäse light", "100g Falafel", "60g Couscous", "Gemüse"],
+                "anleitung": "Couscous quellen lassen. Mit Hüttenkäse, Gemüse und Falafel anrichten."
+            }
         },
         "Snacks 🍫": {
-            "Magerquark-Flavour-Bowl": {"kcal": 290, "protein": 42, "carbs": 16, "fat": 1, "zutaten": ["300g Magerquark", "50ml Wasser", "Flavour Drops", "50g Himbeeren"], "anleitung": "Quark mit Wasser und Drops cremig schlagen. Himbeeren unterheben."},
-            "Beef Jerky Handvoll": {"kcal": 150, "protein": 28, "carbs": 3, "fat": 2, "zutaten": ["50g Beef Jerky"], "anleitung": "Snackfertig aus der Packung für maximalen Muskelschutz nach dem Training."}
+            "Magerquark-Flavour-Bowl": {
+                "kcal": 290, "protein": 42, "carbs": 16, "fat": 1,
+                "zutaten": ["300g Magerquark", "50ml Wasser", "Flavour Drops", "50g Himbeeren"],
+                "anleitung": "Quark mit Wasser und Drops cremig schlagen. Himbeeren unterheben."
+            },
+            "Beef Jerky Handvoll": {
+                "kcal": 150, "protein": 28, "carbs": 3, "fat": 2,
+                "zutaten": ["50g Beef Jerky"],
+                "anleitung": "Snackfertig aus der Packung für maximalen Muskelschutz nach dem Training."
+            }
         }
     }
 
@@ -251,7 +302,7 @@ if check_password():
     if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
     if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE WORKOUT ENGINE
+    # WORKOUT ENGINE MECHANIK
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -283,23 +334,21 @@ if check_password():
         with st.expander("📈 Ergebnisse / Historie"):
             st.dataframe(pd.DataFrame(st.session_state.kraft_history[ue_name]), hide_index=True, use_container_width=True)
 
-    # LAYOUT OVERVIEW
+    # LAYOUT OVERVIEW (3 Spalten)
     col1, col2, col3 = st.columns([1, 1.5, 1.1], gap="large")
 
     # ==========================================
-    # SPALTE 1: GARMIN (KALORIEN OFFEN, REST IN KACHELN)
+    # SPALTE 1: GARMIN DASHBOARD
     # ==========================================
     with col1:
         st.header("📊 Garmin Dashboard")
         
-        # AUSGESCHLOSSEN: Bleibt immer flach & sichtbar
         st.subheader("🔥 Kalorien & Umsatz")
         st.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
         st.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
         st.caption(f"Grundbedarf (BMR): {g_data['bmr_cal']} kcal")
         st.write("---")
         
-        # NEU: IN ÜBERSICHTLICHE KACHELN GEPAKT
         with st.expander("🏃 Aktivität & Schritte"):
             st.metric("Schritte heute", f"{g_data['steps']:,}")
             st.progress(step_perc)
@@ -319,7 +368,7 @@ if check_password():
             for w in g_data['workout_list']: st.write(w)
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN (AUSGESCHLOSSEN - BLEIBT OFFEN)
+    # SPALTE 2: TRAININGSPLAN (BLEIBT OFFEN)
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -362,12 +411,11 @@ if check_password():
             st.checkbox(f"Session erledigt: {ausdauer_wahl}")
 
     # ==========================================
-    # SPALTE 3: NUTRITION & DATA AUTOMATION (RECHTS)
+    # SPALTE 3: NUTRITION & DATA AUTOMATION
     # ==========================================
     with col3:
         st.header("🍽️ Ernährung & Orga")
         
-        # AUSGESCHLOSSEN: Die Makros bleiben immer flach & sichtbar!
         st.metric("Kcal Restbudget", f"{rem_kcal} kcal", f"Ziel: {tagesbedarf['kcal']}")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
@@ -376,7 +424,6 @@ if check_password():
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         st.write("---")
 
-        # REST IN KACHELN VERPACKT
         with st.expander("👨‍🍳 Perform-All Chefkoch: Rezeptkatalog"):
             cat_choice = st.selectbox("Kategorie wählen:", list(recipe_book.keys()))
             recipe_choice = st.selectbox("Rezept auswählen:", list(recipe_book[cat_choice].keys()))
@@ -411,12 +458,10 @@ if check_password():
             prompt_input = st.text_input("Extrawunsch einplanen (Mikrofon-Taste nutzen):", key="ki_prompt_box")
             tag_auswahl = st.selectbox("Tag:", list(st.session_state.ki_wochenplan.keys()))
             if st.button("KI-Rezept generieren 🪄") and prompt_input:
-                # Schneller API Aufruf und Speicherung im Wochenplan...
                 pass
 
         with st.expander("📸 Neuen Mahlzeit-Scanner"):
             uploaded_file = st.file_uploader("Foto hochladen...", type=["jpg", "png", "jpeg"])
-            # Foto-Logik wie gehabt...
 
         with st.expander("📋 Heutiges Ernährungsprotokoll"):
             if st.session_state.meals_log:
@@ -428,9 +473,6 @@ if check_password():
                         st.rerun()
             else: st.caption("Noch keine Mahlzeiten direkt geloggt.")
 
-        # ==========================================
-        # UPGRADE: INTERAKTIVER MEILEN- & FINANZ-TRACKER
-        # ==========================================
         with st.expander("💼 Finanzen & Points Engine (C24 / Amex / Revolut)", expanded=True):
             st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
             st.caption("Gehaltskonto: **C24 Smart**")
@@ -442,16 +484,15 @@ if check_password():
             f_col2.metric("Payback Punkte", f"{st.session_state.payback_points:,} P")
             
             st.write("---")
-            st.markdown("*Punkte-Rechner (Umsatz manuell buchen):*")
-            spending = st.number_input("Umsatz betrag (€):", value=50.0, step=10.0)
+            spending = st.number_input("Umsatzbetrag (€):", value=50.0, step=10.0)
             method = st.selectbox("Zahlart:", ["American Express (Daily Spending)", "Revolut (Miete/Dauerauftrag)"])
             
             if st.button("Punkte gutschreiben 💳"):
                 if "American" in method:
-                    st.session_state.payback_points += int(spending / 2) # Basis Payback-Ratio
-                    st.toast(f"+{int(spending/2)} Payback Punkte vorgemerkt!", icon="💳")
+                    st.session_state.payback_points += int(spending / 2)
+                    st.toast(f"+{int(spending/2)} Payback Punkte!", icon="💳")
                 else:
-                    st.session_state.miles_collected += int(spending) # Revolut Meilen-Ratio über Miles&More KK
+                    st.session_state.miles_collected += int(spending)
                     st.toast(f"+{int(spending)} Meilen generiert!", icon="✈️")
                 st.rerun()
 
