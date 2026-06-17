@@ -1,4 +1,4 @@
-import streamlit as str
+import streamlit as st
 import pandas as pd
 import datetime
 import zoneinfo
@@ -7,28 +7,28 @@ from PIL import Image
 from google import genai
 
 # 1. Page Configuration (3 Spalten mit Fokus auf die Mitte)
-str.set_page_config(page_title="Perform All // Alec", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Perform All // Alec", page_icon="⚡", layout="wide")
 
 # Minimalistisches CSS für den authentischen "Perform All" Dark-App-Look
-str.markdown("""
+st.markdown("""
     <style>
     .main { background-color: #0b0e14; color: #ffffff; }
     div[data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; color: #00ffcc; }
     div[data-testid="stMetricLabel"] { font-size: 13px; color: #888888; }
     .stCheckbox { padding: 5px; background-color: #161b22; border-radius: 5px; margin-bottom: 5px; }
     </style>
-""", unsafe_allowed_html=True)
+""", unsafe_allow_html=True)
 
 # Passwort-Schutz für das Smartphone
 def check_password():
-    if "password_correct" not in str.session_state:
-        str.text_input("Bitte Perform All Passwort eingeben:", type="password", key="password")
-        if str.button("Login"):
-            if str.session_state["password"] == str.secrets["DASHBOARD_PASSWORD"]:
-                str.session_state["password_correct"] = True
-                str.rerun()
+    if "password_correct" not in st.session_state:
+        st.text_input("Bitte Perform All Passwort eingeben:", type="password", key="password")
+        if st.button("Login"):
+            if st.session_state["password"] == st.secrets["DASHBOARD_PASSWORD"]:
+                st.session_state["password_correct"] = True
+                st.rerun()
             else:
-                str.error("Falsches Passwort")
+                st.error("Falsches Passwort")
         return False
     return True
 
@@ -37,14 +37,14 @@ if check_password():
     # ==========================================
     # API INITIALISIERUNG
     # ==========================================
-    GARMIN_EMAIL = str.secrets["GARMIN_EMAIL"]
-    GARMIN_PASSWORD = str.secrets["GARMIN_PASSWORD"]
-    GEMINI_API_KEY = str.secrets["GEMINI_API_KEY"]
+    GARMIN_EMAIL = st.secrets["GARMIN_EMAIL"]
+    GARMIN_PASSWORD = st.secrets["GARMIN_PASSWORD"]
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
     # GARMIN DATENABRUF (Cached für 5 Minuten)
-    @str.cache_data(ttl=300)
+    @st.cache_data(ttl=300)
     def fetch_garmin_data():
         try:
             client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
@@ -109,139 +109,139 @@ if check_password():
     g_data, garmin_success = fetch_garmin_data()
 
     # ERNÄHRUNGS-LOGIK (SESSION STATE)
-    if "verzehrt" not in str.session_state:
-        str.session_state.verzehrt = {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}
-        str.session_state.meals_log = []
+    if "verzehrt" not in st.session_state:
+        st.session_state.verzehrt = {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}
+        st.session_state.meals_log = []
 
     # 102kg Makro-Soll (Defizit + High Protein)
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
     # APP HEADER (Perform All Branding)
-    str.title("⚡ PERFORM ALL // ALEC")
-    str.caption("High Performance Fitness & Nutrition Tracking")
-    str.write("---")
+    st.title("⚡ PERFORM ALL // ALEC")
+    st.caption("High Performance Fitness & Nutrition Tracking")
+    st.write("---")
 
     # Layout-Generierung: 3 vertikal scrollbare Spalten (Workouts prominent in der Mitte)
-    col1, col2, col3 = str.columns([1, 1.4, 1.1], gap="large")
+    col1, col2, col3 = st.columns([1, 1.4, 1.1], gap="large")
 
     # ==========================================
     # SPALTE 1: ALL GARMIN VITALS & CALORIES
     # ==========================================
     with col1:
-        str.header("📊 Garmin Dashboard")
+        st.header("📊 Garmin Dashboard")
         
         # Energie-Sektion
-        str.subheader("🔥 Kalorien & Umsatz")
-        str.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
-        str.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
-        str.caption(f"Grundbedarf (BMR): {g_data['bmr_cal']} kcal")
+        st.subheader("🔥 Kalorien & Umsatz")
+        st.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
+        st.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
+        st.caption(f"Grundbedarf (BMR): {g_data['bmr_cal']} kcal")
         
-        str.write("---")
+        st.write("---")
         
         # Aktivitäts-Sektion
-        str.subheader("🏃 Aktivität")
-        str.metric("Schritte heute", f"{g_data['steps']:,}")
+        st.subheader("🏃 Aktivität")
+        st.metric("Schritte heute", f"{g_data['steps']:,}")
         step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
-        str.progress(step_perc)
-        str.caption(f"Ziel: {g_data['step_goal']:,} ({int(step_perc*100)}%)")
-        str.write(f"Distanz: **{g_data['distance_km']} km** | Etagen: **{g_data['floors']}**")
+        st.progress(step_perc)
+        st.caption(f"Ziel: {g_data['step_goal']:,} ({int(step_perc*100)}%)")
+        st.write(f"Distanz: **{g_data['distance_km']} km** | Etagen: **{g_data['floors']}**")
         
-        str.write("---")
+        st.write("---")
         
         # Erholungs-Sektion
-        str.subheader("💤 Recovery & Herz")
-        str.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100", f"{g_data['sleep_duration']} Std Dauer")
-        str.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm", f"Max heute: {g_data['max_hr']} bpm")
-        str.metric("Stress-Level (Ø)", f"{g_data['stress_avg']} / 100")
+        st.subheader("💤 Recovery & Herz")
+        st.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100", f"{g_data['sleep_duration']} Std Dauer")
+        st.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm", f"Max heute: {g_data['max_hr']} bpm")
+        st.metric("Stress-Level (Ø)", f"{g_data['stress_avg']} / 100")
         
-        str.write("---")
-        str.subheader("📝 Letzte Aktivitäten")
+        st.write("---")
+        st.subheader("📝 Letzte Aktivitäten")
         for w in g_data['workout_list']:
-            str.write(w)
+            st.write(w)
 
     # ==========================================
     # SPALTE 2: PERFORM ALL WORKOUT ENGINE (MITTE)
     # ==========================================
     with col2:
-        str.header("📅 Trainingsplan & Einheiten")
-        str.caption("Wähle deinen Tag und hake die Übungen nach dem Satz ab.")
+        st.header("📅 Trainingsplan & Einheiten")
+        st.caption("Wähle deinen Tag und hake die Übungen nach dem Satz ab.")
         
         # Das Herzstück: Die interaktiven Trainingspläne
-        tab1, tab2, tab3, tab4, tab5 = str.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
         
         with tab1:
-            str.subheader("Oberkörper Grundkraft")
-            str.checkbox("Bankdrücken (4 Sätze x 6 Wdh.)")
-            str.checkbox("Klimmzüge mit Zusatzgewicht (4 Sätze x 6 Wdh.)")
-            str.checkbox("Dips / Barrenstütz (3 Sätze x 8 Wdh.)")
-            str.checkbox("Langhantelrudern vorgebeugt (3 Sätze x 8 Wdh.)")
-            str.checkbox("Face Pulls für Schulterstabilität (3 Sätze x 12 Wdh.)")
+            st.subheader("Oberkörper Grundkraft")
+            st.checkbox("Bankdrücken (4 Sätze x 6 Wdh.)")
+            st.checkbox("Klimmzüge mit Zusatzgewicht (4 Sätze x 6 Wdh.)")
+            st.checkbox("Dips / Barrenstütz (3 Sätze x 8 Wdh.)")
+            st.checkbox("Langhantelrudern vorgebeugt (3 Sätze x 8 Wdh.)")
+            st.checkbox("Face Pulls für Schulterstabilität (3 Sätze x 12 Wdh.)")
             
         with tab2:
-            str.subheader("Handball Leg Day (Explosivität & Schutz)")
-            str.checkbox("Bulgarian Split Squats (4 Sätze x 8 Wdh. je Seite) - *Richtungswechsel*")
-            str.checkbox("Trap-Bar Kreuzheben (4 Sätze x 6 Wdh.) - *Maximale Beinkraft*")
-            str.checkbox("Box Jumps / Rebound-Sprünge (3 Sätze x 5 Wdh.) - *Sprungwurf-Power*")
-            str.checkbox("Lateral Lunges / Seitliche Ausfallschritte (3 Sätze x 8 Wdh.) - *Abwehr-Side-Steps*")
-            str.checkbox("Nordic Hamstring Curls (3 Sätze x 6 Wdh.) - *Oberschenkel-Schutz*")
+            st.subheader("Handball Leg Day (Explosivität & Schutz)")
+            st.checkbox("Bulgarian Split Squats (4 Sätze x 8 Wdh. je Seite) - *Richtungswechsel*")
+            st.checkbox("Trap-Bar Kreuzheben (4 Sätze x 6 Wdh.) - *Maximale Beinkraft*")
+            st.checkbox("Box Jumps / Rebound-Sprünge (3 Sätze x 5 Wdh.) - *Sprungwurf-Power*")
+            st.checkbox("Lateral Lunges / Seitliche Ausfallschritte (3 Sätze x 8 Wdh.) - *Abwehr-Side-Steps*")
+            st.checkbox("Nordic Hamstring Curls (3 Sätze x 6 Wdh.) - *Oberschenkel-Schutz*")
             
         with tab3:
-            str.subheader("Oberkörper Volumen (Hypertrophie)")
-            str.checkbox("Schrägbankdrücken mit Kurzhanteln (4 Sätze x 10 Wdh.)")
-            str.checkbox("Kabelrudern eng zum Bauch (4 Sätze x 10 Wdh.)")
-            str.checkbox("Seitheben am Kabelzug (3 Sätze x 12 Wdh.)")
-            str.checkbox("Incline Bicep Curls (3 Sätze x 12 Wdh.)")
-            str.checkbox("Tricep Rope Pushdowns (3 Sätze x 12 Wdh.)")
+            st.subheader("Oberkörper Volumen (Hypertrophie)")
+            st.checkbox("Schrägbankdrücken mit Kurzhanteln (4 Sätze x 10 Wdh.)")
+            st.checkbox("Kabelrudern eng zum Bauch (4 Sätze x 10 Wdh.)")
+            st.checkbox("Seitheben am Kabelzug (3 Sätze x 12 Wdh.)")
+            st.checkbox("Incline Bicep Curls (3 Sätze x 12 Wdh.)")
+            st.checkbox("Tricep Rope Pushdowns (3 Sätze x 12 Wdh.)")
             
         with tab4:
-            str.subheader("Schnellkraft & Rumpfstabilität")
-            str.checkbox("Power Cleans / Umsetzen aus dem Hang (4 Sätze x 3 Wdh.)")
-            str.checkbox("Medizinball-Rotationswürfe gegen die Wand (3 Sätze x 8 Wdh. je Seite)")
-            str.checkbox("Romanian Deadlifts (3 Sätze x 10 Wdh.)")
-            str.checkbox("Ab-Wheel Rollouts / Core-Slam (3 Sätze x max.)")
-            str.checkbox("Pallof Press am Kabelzug (3 Sätze x 12 Wdh. je Seite)")
+            st.subheader("Schnellkraft & Rumpfstabilität")
+            st.checkbox("Power Cleans / Umsetzen aus dem Hang (4 Sätze x 3 Wdh.)")
+            st.checkbox("Medizinball-Rotationswürfe gegen die Wand (3 Sätze x 8 Wdh. je Seite)")
+            st.checkbox("Romanian Deadlifts (3 Sätze x 10 Wdh.)")
+            st.checkbox("Ab-Wheel Rollouts / Core-Slam (3 Sätze x max.)")
+            st.checkbox("Pallof Press am Kabelzug (3 Sätze x 12 Wdh. je Seite)")
             
         with tab5:
-            str.subheader("Handball Intervall- & Grundlagenausdauer")
-            ausdauer_wahl = str.radio("Wähle deine heutige Cardio-Session:", ["Zone 2 Lauf (45-60 Min. Fettverbrennung & Regeneration)", "Handball Shuttle Runs (15x 20m Sprints mit abruptem Abstoppen, 30 Sek. Pause)"])
-            str.checkbox(f"Session erfolgreich beendet: {ausdauer_wahl}")
+            st.subheader("Handball Intervall- & Grundlagenausdauer")
+            ausdauer_wahl = st.radio("Wähle deine heutige Cardio-Session:", ["Zone 2 Lauf (45-60 Min. Fettverbrennung & Regeneration)", "Handball Shuttle Runs (15x 20m Sprints mit abruptem Abstoppen, 30 Sek. Pause)"])
+            st.checkbox(f"Session erfolgreich beendet: {ausdauer_wahl}")
 
-        str.write("---")
-        str.subheader("📝 Trainings-Notizen & Progression")
-        str.text_area("Hier kannst du deine geschafften Gewichte für das nächste Mal eintragen:", placeholder="z.B. Bankdrücken erhöht auf 90kg...", key="prog_notes_all")
+        st.write("---")
+        st.subheader("📝 Trainings-Notizen & Progression")
+        st.text_area("Hier kannst du deine geschafften Gewichte für das nächste Mal eintragen:", placeholder="z.B. Bankdrücken erhöht auf 90kg...", key="prog_notes_all")
 
     # ==========================================
     # SPALTE 3: NUTRITION & FINANCIAL ORGA
     # ==========================================
     with col3:
-        str.header("🍽️ Ernährung & Orga")
+        st.header("🍽️ Ernährung & Orga")
         
         # Live-Restbudget-Berechnung
-        rem_kcal = max(tagesbedarf["kcal"] - str.session_state.verzehrt["kcal"], 0)
-        rem_p = max(tagesbedarf["protein"] - str.session_state.verzehrt["protein"], 0)
-        rem_c = max(tagesbedarf["carbs"] - str.session_state.verzehrt["carbs"], 0)
-        rem_f = max(tagesbedarf["fat"] - str.session_state.verzehrt["fat"], 0)
+        rem_kcal = max(tagesbedarf["kcal"] - st.session_state.verzehrt["kcal"], 0)
+        rem_p = max(tagesbedarf["protein"] - st.session_state.verzehrt["protein"], 0)
+        rem_c = max(tagesbedarf["carbs"] - st.session_state.verzehrt["carbs"], 0)
+        rem_f = max(tagesbedarf["fat"] - st.session_state.verzehrt["fat"], 0)
         
         # Makro-Übersicht oben rechts
-        str.metric("Kcal Restbudget", f"{rem_kcal:,} kcal", f"Ziel: {tagesbedarf['kcal']}")
-        str.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
+        st.metric("Kcal Restbudget", f"{rem_kcal:,} kcal", f"Ziel: {tagesbedarf['kcal']}")
+        st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
-        nu_col1, nu_col2 = str.columns(2)
+        nu_col1, nu_col2 = st.columns(2)
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
-        str.write("---")
+        st.write("---")
         
         # Gemini Foto-Scanner
-        str.subheader("📸 Mahlzeit-Scanner")
-        uploaded_file = str.file_uploader("Foto aufnehmen/hochladen...", type=["jpg", "png", "jpeg"])
+        st.subheader("📸 Mahlzeit-Scanner")
+        uploaded_file = st.file_uploader("Foto aufnehmen/hochladen...", type=["jpg", "png", "jpeg"])
         
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
-            str.image(image, caption="Dein Essen", width=200)
+            st.image(image, caption="Dein Essen", width=200)
             
-            if str.button("Bild via Gemini scannen 🤖"):
-                with str.spinner("Berechne Makros..."):
+            if st.button("Bild via Gemini scannen 🤖"):
+                with st.spinner("Berechne Makros..."):
                     try:
                         prompt = (
                             "Analysiere dieses Essen auf dem Bild. Schätze die Grammanzahl der "
@@ -258,34 +258,34 @@ if check_password():
                         c = int(result[3].split(": ")[1])
                         f = int(result[4].split(": ")[1])
                         
-                        str.session_state.temp_meal = {"name": name, "kcal": kcal, "protein": p, "carbs": c, "fat": f}
+                        st.session_state.temp_meal = {"name": name, "kcal": kcal, "protein": p, "carbs": c, "fat": f}
                     except:
-                        str.error("Fehler bei der Analyse. Versuch es noch mal.")
+                        st.error("Fehler bei der Analyse. Versuch es noch mal.")
             
-            if "temp_meal" in str.session_state:
-                str.markdown("### 🔍 Bestätigen:")
-                edit_name = str.text_input("Name:", value=str.session_state.temp_meal["name"])
-                c_ki1, c_ki2, c_ki3 = str.columns(3)
-                edit_p = c_ki1.number_input("P:", value=str.session_state.temp_meal["protein"])
-                edit_c = c_ki2.number_input("C:", value=str.session_state.temp_meal["carbs"])
-                edit_f = c_ki3.number_input("F:", value=str.session_state.temp_meal["fat"])
+            if "temp_meal" in st.session_state:
+                st.markdown("### 🔍 Bestätigen:")
+                edit_name = st.text_input("Name:", value=st.session_state.temp_meal["name"])
+                c_ki1, c_ki2, c_ki3 = st.columns(3)
+                edit_p = c_ki1.number_input("P:", value=st.session_state.temp_meal["protein"])
+                edit_c = c_ki2.number_input("C:", value=st.session_state.temp_meal["carbs"])
+                edit_f = c_ki3.number_input("F:", value=st.session_state.temp_meal["fat"])
                 edit_kcal = (edit_p * 4) + (edit_c * 4) + (edit_f * 9)
                 
-                if str.button("In Log eintragen ✅"):
-                    str.session_state.verzehrt["kcal"] += edit_kcal
-                    str.session_state.verzehrt["protein"] += edit_p
-                    str.session_state.verzehrt["carbs"] += edit_c
-                    str.session_state.verzehrt["fat"] += edit_f
-                    str.session_state.meals_log.append(f"{edit_name} ({edit_kcal} kcal | {edit_p}g P)")
-                    del str.session_state.temp_meal
-                    str.rerun()
+                if st.button("In Log eintragen ✅"):
+                    st.session_state.verzehrt["kcal"] += edit_kcal
+                    st.session_state.verzehrt["protein"] += edit_p
+                    st.session_state.verzehrt["carbs"] += edit_c
+                    st.session_state.verzehrt["fat"] += edit_f
+                    st.session_state.meals_log.append(f"{edit_name} ({edit_kcal} kcal | {edit_p}g P)")
+                    del st.session_state.temp_meal
+                    st.rerun()
 
-        if str.session_state.meals_log:
-            for meal in str.session_state.meals_log:
-                str.caption(f"✔️ {meal}")
+        if st.session_state.meals_log:
+            for meal in st.session_state.meals_log:
+                st.caption(f"✔️ {meal}")
 
         # Finanzen und feste tägliche Routinen nach unten gestapelt
-        str.write("---")
-        str.subheader("💼 Finanzen & Daily Routine")
-        str.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
-        str.checkbox("Handball-Dehnprogramm absolviert (15 Min)")
+        st.write("---")
+        st.subheader("💼 Finanzen & Daily Routine")
+        st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
+        st.checkbox("Handball-Dehnprogramm absolviert (15 Min)")
