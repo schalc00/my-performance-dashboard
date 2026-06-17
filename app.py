@@ -92,6 +92,7 @@ if check_password():
             workout_list = []
             garmin_strength_today = {}
             raw_strength_sets = []
+            garmin_runs_history = []
             
             if activities:
                 for act in activities:
@@ -101,6 +102,31 @@ if check_password():
                     workout_list.append(f"💪 {w_type}: {w_dur} Min ({w_cal} kcal)")
                     
                     act_date = act.get('startTimeLocal', '')[:10]
+                    
+                    # NEU: LIVE SYNC FÜR DEINE LAUFEINHEITEN
+                    if w_type in ['running', 'run', 'trail_running']:
+                        r_dist = round(act.get('distance', 0) / 1000, 2)
+                        r_dur_sec = act.get('duration', 0)
+                        r_dur_min = round(r_dur_sec / 60, 1)
+                        if r_dist > 0:
+                            total_min = r_dur_sec / 60
+                            pace_dec = total_min / r_dist
+                            p_m = int(pace_dec)
+                            p_s = int((pace_dec - p_m) * 60)
+                            pace_str = f"{p_m}:{p_s:02d} min/km"
+                            speed_kmh = round(r_dist / (total_min / 60), 1)
+                        else:
+                            pace_str = "--"
+                            speed_kmh = 0
+                        garmin_runs_history.append({
+                            "Datum": act_date[8:10] + "." + act_date[5:7] + ".",
+                            "Typ": act.get('activityName', 'Lauf'),
+                            "Distanz": f"{r_dist} km",
+                            "Dauer": f"{r_dur_min} Min",
+                            "Pace": pace_str,
+                            "Speed": f"{speed_kmh} km/h"
+                        })
+                    
                     if w_type == 'strength_training' and act_date == today:
                         act_id = act.get('activityId')
                         try:
@@ -163,6 +189,7 @@ if check_password():
                 "workout_list": workout_list,
                 "garmin_strength_today": garmin_strength_today,
                 "raw_strength_sets": raw_strength_sets,
+                "garmin_runs_history": garmin_runs_history,
                 "steps": steps,
                 "step_goal": step_goal,
                 "active_cal": active_cal,
@@ -182,7 +209,7 @@ if check_password():
         except:
             fallback = {
                 "rhr": "--", "max_hr": "--", "workout_list": ["Synchronisiere..."],
-                "garmin_strength_today": {}, "raw_strength_sets": [],
+                "garmin_strength_today": {}, "raw_strength_sets": [], "garmin_runs_history": [],
                 "steps": 0, "step_goal": 10000, "active_cal": 0, "bmr_cal": 1900, "total_cal": 1900,
                 "distance_km": 0.0, "floors": 0, "sleep_duration": 0, "sleep_score": "--", "stress_avg": "--",
                 "vo2_max": "--", "recovery_time": "--", "race_5k": "--", "training_status": "--"
@@ -203,8 +230,12 @@ if check_password():
         st.session_state.ki_wochenplan = {"Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], "Freitag": [], "Samstag": [], "Sonntag": []}
         
     if "prozis_weight" not in st.session_state: st.session_state.prozis_weight = 102.0
+    
+    # NEU: Persistenter Speicher für deine manuell eingetragenen Läufe
+    if "cardio_history" not in st.session_state:
+        st.session_state.cardio_history = []
 
-    # DYNAMISCHE REZEPT-DATENBANK
+    # REZEPT-DATENBANK
     recipe_book = {
         "Frühstück 🥞": {
             "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
@@ -228,7 +259,7 @@ if check_password():
         }
     }
 
-    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM NEUEN MORGENGEWICHT-FELD
+    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM MORGENGEWICHT-FELD
     w_aktuell = st.session_state.prozis_weight
     tagesbedarf = {
         "kcal": int(w_aktuell * 25.5),      
@@ -259,6 +290,7 @@ if check_password():
     rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
     rem_f = max(tagesbedarf["fat"] - verzehrt_fat, 0)
 
+    # ALL KRAFT ÜBUNGEN
     alle_uebungen = [
         "Bankdrücken", "Klimmzüge", "Dips", "Langhantelrudern", "Face Pulls", "Bulgarian Split Squats", "Trap-Bar Kreuzheben", 
         "Box Jumps", "Lateral Lunges", "Nordic Hamstring Curls", "Schrägbankdrücken KH", "Kabelrudern eng", "Seitheben", 
@@ -315,7 +347,6 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
-        # KORREKTUR: Saubere Namensänderung auf Wunsch
         st.write("---")
         st.session_state.prozis_weight = st.number_input("⚖️ Morgengewicht (kg):", value=float(st.session_state.prozis_weight), step=0.1)
         st.caption("Echtzeit-Anpassung deiner Trainings-Makros.")
@@ -380,7 +411,7 @@ if check_password():
                         st.rerun()
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN & INTEGRIERTES DEHNEN (MITTE)
+    # SPALTE 2: TRAININGSPLAN & PRO CARDIO ENGINE (MITTE)
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -392,7 +423,6 @@ if check_password():
         
         with tab1:
             st.subheader("Oberkörper Grundkraft")
-            # KORREKTUR: Ausgeschriebene, handballspezifische Dehnübungen zum Abhaken
             with st.expander("🧘 Warm-up: Schulter- & Brust-Mobility"):
                 st.checkbox("10x Schulter- & Armkreisen vorwärts/rückwärts")
                 st.checkbox("12x Besenstil / Band Pass-Throughs (Schultermobilität)")
@@ -427,7 +457,6 @@ if check_password():
             with st.expander("🏋️ Incline Bicep Curls"): render_exercise_engine("Incline Curls", 15.0, 12)
             with st.expander("🏋️ Tricep Rope Pushdowns"): render_exercise_engine("Trizepsdrücken", 30.0, 12)
             st.write("---")
-            # KORREKTUR: Ausgeschriebenes Cool-down Programm
             with st.expander("🧘 Cool-down: Post-Workout Oberkörper Stretching"):
                 st.checkbox("60s Kindeshaltung / Child's Pose (Lat-Dehnen)")
                 st.checkbox("45s Pec-Stretch an der Wand (Brustmuskel-Regeneration)")
@@ -447,9 +476,74 @@ if check_password():
             with st.expander("🏋️ Pallof Press am Kabelzug"): render_exercise_engine("Pallof Press", 20.0, 12)
             
         with tab5:
-            st.subheader("Handball Ausdauer")
-            ausdauer_wahl = st.radio("Cardio-Session:", ["Zone 2 Lauf (45-60 Min.)", "Handball Shuttle Runs (15x 20m)"])
-            st.checkbox(f"Session erledigt: {ausdauer_wahl}")
+            st.subheader("🏃‍♂️ Ausdauer & Pacing-Zentrale")
+            
+            # 1. LIVE REZENTE LAUFDATEN AUS DEINER GARMIN UHR
+            if g_data.get("garmin_runs_history"):
+                with st.expander("⌚ Garmin Live-Tracker: Letzte Läufe", expanded=True):
+                    st.success("Erfolgreich mit deiner Garmin synchronisiert:")
+                    df_g_runs = pd.DataFrame(g_data["garmin_runs_history"])
+                    st.dataframe(df_g_runs, hide_index=True, use_container_width=True)
+            
+            # 2. MASSIV ERWEITERTER MANUELLER KALKULATOR (Sicherheitsnetz)
+            st.write("---")
+            st.markdown("**Manueller Ausdauer-Tracker:**")
+            
+            c_type = st.selectbox("Lauftyp wählen:", [
+                "Zone 2 Lauf (Grundlagenausdauer / Fettverbrennung)",
+                "Intervalllauf / HIIT (Laktattoleranz & Match-Sprints)",
+                "Schneller 5 km Tempolauf (Wettkampfhärte)",
+                "10 km Dauerlauf (Aerobe Kapazität)",
+                "2-Stunden-Dauerlauf (Maximale Belastungsdauer)",
+                "Zone 4/5 Schwellenlauf (VO2-Max Entwicklung)",
+                "Handball Shuttle Runs (Sprints mit abruptem Abstoppen)"
+            ])
+            
+            if "Shuttle Runs" in c_type:
+                st.caption("💡 *Handball-Info:* Das sind explosive Pendelläufe zwischen Hallenlinien. Sie trainieren die exakten Stop-and-Go-Belastungen und schnellen Richtungswechsel in der Abwehr.")
+                
+            c_col1, c_col2, c_col3 = st.columns(3)
+            c_dist = c_col1.number_input("Distanz (km):", value=5.0, step=0.1, key="c_dist_in")
+            c_min = c_col2.number_input("Zeit: Minuten:", value=25, step=1, key="c_min_in")
+            c_sec = c_col3.number_input("Zeit: Sekunden:", value=0, step=1, max_value=59, key="c_sec_in")
+            
+            # Vollautomatische Live-Pace & Geschwindigkeitsberechnung
+            total_man_minutes = c_min + (c_sec / 60)
+            if c_dist > 0 and total_man_minutes > 0:
+                man_speed = round(c_dist / (total_man_minutes / 60), 1)
+                man_pace_dec = total_man_minutes / c_dist
+                man_p_m = int(man_pace_dec)
+                man_p_s = int((man_pace_dec - man_p_m) * 60)
+                man_pace_str = f"{man_p_m}:{man_p_s:02d} min/km"
+                
+                m_calc1, m_calc2 = st.columns(2)
+                m_calc1.metric("Berechnete Pace", man_pace_str)
+                m_calc2.metric("Geschwindigkeit", f"{man_speed} km/h")
+            else:
+                man_pace_str = "--"
+                man_speed = 0
+                
+            if st.button("Lauf in Historie loggen 🏃‍♂️", key="log_cardio_btn"):
+                h_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
+                st.session_state.cardio_history.append({
+                    "Datum": h_datum,
+                    "Typ": c_type.split(" (")[0],
+                    "Distanz": f"{c_dist} km",
+                    "Dauer": f"{c_min}:{c_sec:02d} Min",
+                    "Pace": man_pace_str,
+                    "Speed": f"{man_speed} km/h"
+                })
+                st.toast("Lauf erfolgreich protokolliert!", icon="🏃‍♂️")
+                st.rerun()
+                
+            # Historie aller Läufe
+            with st.expander("📈 Ergebnisse / Alle vergangenen Läufe"):
+                if st.session_state.cardio_history:
+                    df_c_history = pd.DataFrame(st.session_state.cardio_history)
+                    st.dataframe(df_c_history, hide_index=True, use_container_width=True)
+                else:
+                    st.caption("Noch keine Läufe manuell geloggt. Nutze die Eingabefelder oben.")
+                
             st.write("---")
             with st.expander("🧘 Cool-down: Regeneration & Blackroll"):
                 st.checkbox("3 Min. Waden & Schienbeine ausrollen (Blackroll gegen Shinsplints)")
