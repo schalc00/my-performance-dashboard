@@ -43,7 +43,7 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # REPARIERTER & ERWÄHLTER GARMIN DATENABRUF
+    # STABILES & ERWEITERTES GARMIN DATA-FETCHING
     @st.cache_data(ttl=300)
     def fetch_garmin_data():
         try:
@@ -53,13 +53,13 @@ if check_password():
             berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
             today = berlin_time.date().isoformat()
             
-            # Verwende die absolut stabilen Standard-Endpunkte
+            # Die stabilsten Haupt-Endpunkte abrufen
             stats = client.get_stats(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
             activities = client.get_activities(0, 5)
             
-            # --- ERWEITERTE GESUNDHEITSDATEN (VO2 Max, Training Status etc.) ---
+            # --- ERWEITERTE PERFORMANCE- & GESUNDHEITSDATEN ---
             vo2_max = "--"
             recovery_time = "--"
             race_5k = "--"
@@ -81,7 +81,7 @@ if check_password():
             except:
                 pass
 
-            # Workouts extrahieren
+            # Workouts und integrierte Sätze auslesen
             workout_list = []
             garmin_strength_today = {}
             raw_strength_sets = []
@@ -143,7 +143,6 @@ if check_password():
             sleep_hours = round(sleep_dto.get("sleepTimeSeconds", 0) / 3600, 1) if sleep_dto else 0
             sleep_score = sleep_dto.get("sleepScore", "--") if sleep_dto else "--"
             
-            # Präzises Auslesen aus dem stabilen stats-Paket
             steps = stats.get("steps") or stats.get("totalSteps") or 0
             step_goal = stats.get("stepsGoal") or 10000
             active_cal = round(stats.get("activeCalories", 0))
@@ -191,14 +190,14 @@ if check_password():
     g_data, garmin_success = fetch_garmin_data()
 
     # ==========================================
-    # ABSICHERUNG GEGEN ALTE SPEICHERRESTE
+    # DATEN-CLEANER FÜR MAHLZEITEN
     # ==========================================
     if "meals_log" not in st.session_state:
         st.session_state.meals_log = []
     else:
         st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
 
-    # HIER SIND JETZT ALLE VORGEFERTIGTEN REZEPTE GELÖSCHT
+    # REZEPTE GELÖSCHT – JETZT VOLLKOMMEN LEER FÜR DICH
     if "favorites" not in st.session_state:
         st.session_state.favorites = {
             "--- Bitte wählen ---": None
@@ -224,7 +223,7 @@ if check_password():
     if "current_workout_logs" not in st.session_state:
         st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # TRACKING ENGINE MIT LIVE FEEDBACK & LÖSCHFUNKTION
+    # WORKOUT MECHANIK (Sätze & Live-Feedback)
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         
@@ -267,10 +266,7 @@ if check_password():
             df_history = pd.DataFrame(st.session_state.kraft_history[ue_name])
             st.dataframe(df_history, hide_index=True, use_container_width=True)
 
-    # APP LAYOUT
-    st.title("⚡ PERFORM ALL // ALEC")
-    st.write("---")
-
+    # APP LAYOUT GENERIERUNG
     col1, col2, col3 = st.columns([1, 1.5, 1.1], gap="large")
 
     # ==========================================
@@ -285,7 +281,7 @@ if check_password():
         
         st.write("---")
         st.subheader("🏃 Aktivität")
-        st.metric("Schritte heute", f"{g_data['steps']:",}")
+        st.metric("Schritte heute", f"{g_data['steps']:,}")
         step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
         st.progress(step_perc)
         
@@ -294,7 +290,7 @@ if check_password():
         st.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100", f"{g_data['sleep_duration']} Std Dauer")
         st.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm")
         
-        # NEU: DIE HIER GEFORDERTEN ERWEITERTEN LEISTUNGSWERTE (Einklappbar)
+        # AUSGEBAUTE LEISTUNGSDATEN (VO2 MAX, 5K, ERHOLUNG)
         with st.expander("📈 Erweiterte Leistungsdaten"):
             st.metric("Ausdauerwert (VO2 Max)", f"{g_data['vo2_max']} ml/min/kg")
             st.metric("Erholungszeit", f"{g_data['recovery_time']}")
@@ -472,7 +468,6 @@ if check_password():
                     del st.session_state.temp_meal
                     st.rerun()
 
-        # DAS ERNÄHRUNGSPROTOKOLL MIT LÖSCH-X
         if st.session_state.meals_log:
             st.write("---")
             st.markdown("**Heutige Mahlzeiten:**")
@@ -483,7 +478,6 @@ if check_password():
                     st.session_state.meals_log.pop(idx)
                     st.rerun()
 
-        # Finanzen
         st.write("---")
         st.subheader("💼 Finanzen & Daily Routine")
         st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
