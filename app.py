@@ -6,8 +6,8 @@ from garminconnect import Garmin
 from PIL import Image
 from google import genai
 
-# 1. Page Configuration (Breites Layout für optimale Spaltennutzung)
-str.set_page_config(page_title="Alec's Dashboard", page_icon="⚡", layout="wide")
+# 1. Page Configuration (Breites Layout für 4 Spalten)
+str.set_page_config(page_title="Alec's Performance Dashboard", page_icon="⚡", layout="wide")
 
 # Passwort-Schutz für das Smartphone
 def check_password():
@@ -24,41 +24,40 @@ def check_password():
 
 if check_password():
     
+    # ==========================================
     # API INITIALISIERUNG
+    # ==========================================
     GARMIN_EMAIL = str.secrets["GARMIN_EMAIL"]
     GARMIN_PASSWORD = str.secrets["GARMIN_PASSWORD"]
     GEMINI_API_KEY = str.secrets["GEMINI_API_KEY"]
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # MAXIMALER GARMIN DATENABRUF (Cached für 5 Minuten)
+    # VOLLSTÄNDIGER GARMIN DATENABRUF (Cached für 5 Minuten)
     @str.cache_data(ttl=300)
     def fetch_garmin_data():
         try:
             client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
             client.login()
             
-            # Deutsche Zeitzone für exaktes Datum
             berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
             today = berlin_time.date().isoformat()
             
-            # Die mächtigsten Garmin-Endpunkte abrufen
             summary = client.get_user_summary(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
-            activities = client.get_activities(0, 3) # Holt die letzten 3 Workouts
+            activities = client.get_activities(0, 5) # Letzten 5 Einheiten
             
-            # 1. Workouts auslesen
+            # Workouts extrahieren
             workout_list = []
             if activities:
                 for act in activities:
                     w_type = act.get('activityType', {}).get('typeKey', 'Workout')
                     w_dur = round(act.get('duration', 0) / 60)
                     w_cal = round(act.get('calories', 0))
-                    workout_list.append(f"✔️ {w_type}: {w_dur} Min ({w_cal} kcal)")
-            last_workout = workout_list[0] if workout_list else "Kein Workout heute getrackt"
+                    workout_list.append(f"💪 {w_type}: {w_dur} Min ({w_cal} kcal)")
             
-            # 2. Schlafdaten & Phasen auslesen
+            # Schlaf & Phasen extrahieren
             sleep_dto = sleep_data.get("dailySleepDTO", {}) if sleep_data else {}
             sleep_hours = round(sleep_dto.get("sleepTimeSeconds", 0) / 3600, 1) if sleep_dto else 0
             sleep_score = sleep_dto.get("sleepScore", "--") if sleep_dto else "--"
@@ -67,7 +66,7 @@ if check_password():
             rem_sleep = round(sleep_dto.get("remSleepSeconds", 0) / 60) if sleep_dto else 0
             awake_time = round(sleep_dto.get("awakeSleepSeconds", 0) / 60) if sleep_dto else 0
             
-            # 3. Aktivität & Kalorien aus der Summary (Viel präziser!)
+            # Aktivität & Energie
             steps = summary.get("totalSteps") or summary.get("steps") or 0
             step_goal = summary.get("stepsGoal") or 10000
             active_cal = round(summary.get("activeCalories", 0))
@@ -76,13 +75,12 @@ if check_password():
             distance_km = round(summary.get("distanceInMeters", 0) / 1000, 2)
             floors = summary.get("floorsClimbed", 0)
             
-            # Intensitätsminuten
+            # Intensität & Stress
             mod_min = summary.get("moderateIntensityMinutes", 0)
             vig_min = summary.get("vigorousIntensityMinutes", 0)
-            total_intensity = mod_min + (vig_min * 2) # Intensive Minuten zählen doppelt
+            total_intensity = mod_min + (vig_min * 2)
             intensity_goal = summary.get("intensityMinutesGoal", 150)
             
-            # Stresslevel
             stress_avg = summary.get("averageStressLevel", "--")
             if stress_avg == -1 or stress_avg == 0:
                 stress_avg = "--"
@@ -90,7 +88,6 @@ if check_password():
             garmin_pack = {
                 "rhr": heart_rates.get("restingHeartRate", "--"),
                 "max_hr": heart_rates.get("maxHeartRate", "--"),
-                "last_workout": last_workout,
                 "workout_list": workout_list,
                 "steps": steps,
                 "step_goal": step_goal,
@@ -112,11 +109,11 @@ if check_password():
             return garmin_pack, True
         except Exception as e:
             fallback = {
-                "rhr": "--", "max_hr": "--", "last_workout": "Synchronisiere...", "workout_list": [],
+                "rhr": "--", "max_hr": "--", "workout_list": ["Synchronisiere..."],
                 "steps": 0, "step_goal": 10000, "active_cal": 0, "bmr_cal": 0, "total_cal": 0,
                 "distance_km": 0.0, "floors": 0, "total_intensity": 0, "intensity_goal": 150,
-                "sleep_duration": 0, "sleep_score": "--", "deep_sleep": 0, "light_sleep": 0, "rem_sleep": 0, "awake_time": 0,
-                "stress_avg": "--"
+                "sleep_duration": 0, "sleep_score": "--", "deep_sleep": 0, "light_sleep": 0, 
+                "rem_sleep": 0, "awake_time": 0, "stress_avg": "--"
             }
             return fallback, False
 
@@ -127,102 +124,94 @@ if check_password():
         str.session_state.verzehrt = {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}
         str.session_state.meals_log = []
 
-    tagesbedarf = {"kcal": 3200, "protein": 180, "carbs": 400, "fat": 85}
+    # Exakt auf 102kg optimiertes Ziel: Defizit für Fettabbau bei maximalem Muskelerhalt
+    tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
-    # DASHBOARD LAYOUT
-    str.title("⚡ OVERSEER // TOTAL PERFORMANCE")
+    # DASHBOARD LAYOUT (4 Spalten)
+    str.title("⚡ OVERSEER // TOTAL CONTROL HUB")
     str.write("---")
 
-    col1, col2, col3 = str.columns([1.3, 1.3, 1], gap="large")
+    col1, col2, col3, col4 = str.columns([1, 1, 1.1, 1.2], gap="medium")
 
     # ==========================================
-    # SPALTE 1: DER KOMPLETTE GARMIN LIVE HUB
+    # SPALTE 1: GARMIN VITALS & REGENERATION
     # ==========================================
     with col1:
-        str.header("🏋️ Garmin Vital-Zentrale")
+        str.header("💓 Vitals & Schlaf")
+        if garmin_success:
+            str.caption("🟢 Garmin Live-Verbindung aktiv")
+        else:
+            str.caption("臨 Warte auf Uhr-Synchronisation...")
+            
+        str.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm")
+        str.metric("Maximalpuls heute", f"{g_data['max_hr']} bpm")
+        str.metric("Stress-Level (Ø)", f"{g_data['stress_avg']} / 100")
         
-        # 1. Energie & Kalorien (Jetzt lückenlos)
-        with str.expander("🔥 Energie & Kalorienumsatz", expanded=True):
-            en_col1, en_col2, en_col3 = str.columns(3)
-            en_col1.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
-            en_col2.metric("Ruhebedarf (BMR)", f"{g_data['bmr_cal']} kcal")
-            en_col3.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
-            str.caption("Der Aktiv-Verbrauch berechnet sich aus deinen Schritten und getrackten Einheiten.")
-
-        # 2. Bewegung & Tracker-Ziele
-        with str.expander("🏃 Aktivität & Tagesziele", expanded=True):
-            st_col1, st_col2, st_col3 = str.columns(3)
-            st_col1.metric("Schritte", f"{g_data['steps']:,}")
-            st_col2.metric("Distanz", f"{g_data['distance_km']} km")
-            st_col3.metric("Etagen", f"{g_data['floors']}")
-            
-            # Schrittziel-Balken
-            step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
-            str.progress(step_perc)
-            str.caption(f"Schrittziel: {g_data['step_goal']:,} ({int(step_perc*100)}% erreicht)")
-            
-            str.write("---")
-            # Intensitätsminuten
-            int_perc = min(float(g_data['total_intensity'] / g_data['intensity_goal']), 1.0) if g_data['intensity_goal'] > 0 else 0.0
-            str.metric("Intensitätsminuten (Woche)", f"{g_data['total_intensity']} Min", f"Ziel: {g_data['intensity_goal']} Min")
-            str.progress(int_perc)
-
-        # 3. Schlaf- & Regenerationsanalyse (Exakte Aufteilung)
-        with str.expander("💤 Schlaf & Regeneration", expanded=True):
-            sl_col1, sl_col2, sl_col3 = str.columns(3)
-            sl_col1.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100")
-            sl_col2.metric("Schlafdauer", f"{g_data['sleep_duration']} Std")
-            sl_col3.metric("Stress (Ø heute)", f"{g_data['stress_avg']} / 100")
-            
-            if g_data['sleep_duration'] > 0:
-                str.write("---")
-                str.markdown("**Schlafphasen-Aufteilung:**")
-                ph_col1, ph_col2, ph_col3, ph_col4 = str.columns(4)
-                ph_col1.metric("Tief", f"{g_data['deep_sleep']}m")
-                ph_col2.metric("Leicht", f"{g_data['light_sleep']}m")
-                ph_col3.metric("REM", f"{g_data['rem_sleep']}m")
-                ph_col4.metric("Wach", f"{g_data['awake_time']}m")
-
-        # 4. Herzfrequenz & Trainingsverlauf
-        with str.expander("💓 Puls & Letzte Workouts", expanded=False):
-            p_col1, p_col2 = str.columns(2)
-            p_col1.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm")
-            p_col2.metric("Maximalpuls heute", f"{g_data['max_hr']} bpm")
-            
-            str.write("---")
-            str.markdown("**Letzte getrackte Einheiten:**")
-            if g_data['workout_list']:
-                for w in g_data['workout_list']:
-                    str.write(w)
-            else:
-                str.caption("Keine Workouts in den letzten Tagen gefunden.")
+        str.write("---")
+        str.subheader("💤 Schlafphasen")
+        str.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100")
+        str.metric("Schlafdauer", f"{g_data['sleep_duration']} Std")
+        
+        if g_data['sleep_duration'] > 0:
+            str.caption(f" davon Tiefschlaf: {g_data['deep_sleep']} Min.")
+            str.caption(f" davon REM-Schlaf: {g_data['rem_sleep']} Min.")
+            str.caption(f" davon Leichter Schlaf: {g_data['light_sleep']} Min.")
+            str.caption(f" davon Wachphase: {g_data['awake_time']} Min.")
 
     # ==========================================
-    # SPALTE 2: NUTRITION & GEMINI-ANALYSE
+    # SPALTE 2: GARMIN AKTIVITÄT & KALORIEN
     # ==========================================
     with col2:
-        str.header("🍽️ Nutrition & Makros")
+        str.header("🔥 Aktivität & Energie")
+        
+        str.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
+        str.metric("Grundumsatz (BMR)", f"{g_data['bmr_cal']} kcal")
+        str.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
+        
+        str.write("---")
+        str.subheader("🏃 Bewegung tracking")
+        str.metric("Schritte", f"{g_data['steps']:,}")
+        step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
+        str.progress(step_perc)
+        str.caption(f"Ziel: {g_data['step_goal']:,} ({int(step_perc*100)}%)")
+        
+        str.write("---")
+        str.metric("Tagesdistanz", f"{g_data['distance_km']} km")
+        str.metric("Etagen geklettert", f"{g_data['floors']}")
+        
+        str.write("---")
+        str.subheader("📊 Letzte Garmin Einheiten")
+        for w in g_data['workout_list']:
+            str.write(w)
+
+    # ==========================================
+    # SPALTE 3: NUTRITION & GEMINI AI SCANNER
+    # ==========================================
+    with col3:
+        str.header("🍽️ Ernährung (102kg)")
+        str.caption("Ziel: Fettabbau & Muskelschutz")
         
         rem_kcal = max(tagesbedarf["kcal"] - str.session_state.verzehrt["kcal"], 0)
         rem_p = max(tagesbedarf["protein"] - str.session_state.verzehrt["protein"], 0)
         rem_c = max(tagesbedarf["carbs"] - str.session_state.verzehrt["carbs"], 0)
         rem_f = max(tagesbedarf["fat"] - str.session_state.verzehrt["fat"], 0)
         
-        m_col1, m_col2, m_col3, m_col4 = str.columns(4)
-        m_col1.metric("Kcal Rest", f"{rem_kcal:,} kcal")
-        m_col2.metric("Protein", f"{rem_p}g")
-        m_col3.metric("Carbs", f"{rem_c}g")
-        m_col4.metric("Fat", f"{rem_f}g")
+        str.metric("Kcal Restbudget", f"{rem_kcal:,} kcal", f"Ziel: {tagesbedarf['kcal']}")
+        str.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
+        
+        nut_col1, nut_col2 = str.columns(2)
+        nut_col1.metric("Carbs Rest", f"{rem_c}g")
+        nut_col2.metric("Fat Rest", f"{rem_f}g")
         
         str.write("---")
-        str.subheader("📸 Mahlzeit via Gemini tracken")
-        uploaded_file = str.file_uploader("Foto schießen/hochladen...", type=["jpg", "png", "jpeg"])
+        str.subheader("📸 Mahlzeit via Gemini scannen")
+        uploaded_file = str.file_uploader("Foto hochladen...", type=["jpg", "png", "jpeg"])
         
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
-            str.image(image, caption="Dein Essen", width=300)
+            str.image(image, caption="Dein Essen", width=200)
             
-            if str.button("Bild von Gemini analysieren lassen 🤖"):
+            if str.button("Bild analysieren 🤖"):
                 with str.spinner("Gemini berechnet Makros..."):
                     try:
                         prompt = (
@@ -231,56 +220,88 @@ if check_password():
                             "Antworte AUSSCHLIESSLICH in diesem exakten Format ohne Text davor oder danach:\n"
                             "Name: [Name des Essens] | Kcal: [Zahl] | Protein: [Zahl] | Carbs: [Zahl] | Fat: [Zahl]"
                         )
+                        response = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=[image, prompt])
+                        result = response.text.strip().split(" | ")
                         
-                        response = gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=[image, prompt]
-                        )
-                        
-                        result = response.text.strip()
-                        parts = result.split(" | ")
-                        name = parts[0].split(": ")[1]
-                        kcal = int(parts[1].split(": ")[1])
-                        p = int(parts[2].split(": ")[1])
-                        c = int(parts[3].split(": ")[1])
-                        f = int(parts[4].split(": ")[1])
+                        name = result[0].split(": ")[1]
+                        kcal = int(result[1].split(": ")[1])
+                        p = int(result[2].split(": ")[1])
+                        c = int(result[3].split(": ")[1])
+                        f = int(result[4].split(": ")[1])
                         
                         str.session_state.temp_meal = {"name": name, "kcal": kcal, "protein": p, "carbs": c, "fat": f}
-                    except Exception as e:
-                        str.error("Fehler bei der Gemini-Analyse. Bitte das Bild erneut hochladen.")
+                    except:
+                        str.error("Fehler bei der Analyse. Versuch es noch mal.")
             
             if "temp_meal" in str.session_state:
-                str.markdown("### 🔍 Gemini-Vorschlag korrigieren/bestätigen:")
-                c_ki1, c_ki2, c_ki3, c_ki4 = str.columns(4)
+                str.markdown("### 🔍 Vorschlag bestätigen:")
                 edit_name = str.text_input("Name:", value=str.session_state.temp_meal["name"])
-                edit_p = c_ki1.number_input("Protein (g):", value=str.session_state.temp_meal["protein"])
-                edit_c = c_ki2.number_input("Carbs (g):", value=str.session_state.temp_meal["carbs"])
-                edit_f = c_ki3.number_input("Fat (g):", value=str.session_state.temp_meal["fat"])
+                c_ki1, c_ki2, c_ki3 = str.columns(3)
+                edit_p = c_ki1.number_input("Protein:", value=str.session_state.temp_meal["protein"])
+                edit_c = c_ki2.number_input("Carbs:", value=str.session_state.temp_meal["carbs"])
+                edit_f = c_ki3.number_input("Fat:", value=str.session_state.temp_meal["fat"])
                 edit_kcal = (edit_p * 4) + (edit_c * 4) + (edit_f * 9)
                 
-                if str.button("In Log eintragen ✅"):
+                if str.button("Eintragen ✅"):
                     str.session_state.verzehrt["kcal"] += edit_kcal
                     str.session_state.verzehrt["protein"] += edit_p
                     str.session_state.verzehrt["carbs"] += edit_c
                     str.session_state.verzehrt["fat"] += edit_f
-                    
                     str.session_state.meals_log.append(f"{edit_name} ({edit_kcal} kcal | {edit_p}g P)")
                     del str.session_state.temp_meal
                     str.rerun()
 
         if str.session_state.meals_log:
-            str.write("---")
-            str.subheader("Heutige Mahlzeiten:")
             for meal in str.session_state.meals_log:
                 str.caption(f"✔️ {meal}")
 
     # ==========================================
-    # SPALTE 3: FINANZEN & TAGES-CHECKLISTE
+    # SPALTE 4: HANDBALL PLAN & FINANZEN
     # ==========================================
-    with col3:
-        str.header("💼 Finanzen & Tagesziele")
-        str.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
+    with col4:
+        str.header("📅 Workout & Orga")
+        
+        tab1, tab2, tab3, tab4, tab5 = str.tabs(["T1: OK Kraft", "T2: HB Legs", "T3: OK Vol", "T4: Speed", "T5: Cardio"])
+        
+        with tab1:
+            str.caption("Grundkraft Oberkörper")
+            str.checkbox("Bankdrücken (4x6)")
+            str.checkbox("Klimmzüge / Latzug (4x8)")
+            str.checkbox("Overhead Press (3x8)")
+            str.checkbox("Langhantelrudern (3x10)")
+            
+        with tab2:
+            str.caption("Handball-Spezifische Beinkraft & Gelenkschutz")
+            str.checkbox("Bulgarian Split Squats (4x8 je Seite)")
+            str.checkbox("Trap-Bar Kreuzheben (4x6)")
+            str.checkbox("Box Jumps / Plyometrie (3x5)")
+            str.checkbox("Lateral Lunges (3x8 je Seite)")
+            str.checkbox("Nordic Hamstring Curls (3x6)")
+            
+        with tab3:
+            str.caption("Oberkörper Hypertrophie (Muskelerhalt)")
+            str.checkbox("Schrägbankdrücken KH (4x10)")
+            str.checkbox("Kabelrudern eng (4x10)")
+            str.checkbox("Seitheben am Kabel (3x12)")
+            str.checkbox("Bizeps & Trizeps (3x12)")
+            
+        with tab4:
+            str.caption("Schnellkraft & Rumpfstabilität für den Zweikampf")
+            str.checkbox("Hang Cleans / Umsetzen (4x4)")
+            str.checkbox("Medizinball-Überkopf-Würfe (3x8)")
+            str.checkbox("Romanian Deadlifts (3x10)")
+            str.checkbox("Plank mit Zusatzgewicht (3x45 Sek.)")
+            
+        with tab5:
+            str.caption("Saison-Intervall & Grundlagenausdauer")
+            ausdauer_wahl = str.radio("Fokus wählen:", ["Zone 2 Lauf (45-60 Min. Regeneration)", "Handball Shuttle Runs (15x 20m Sprints, 30s Pause)"])
+            str.checkbox(f"Einheit beenden: {ausdauer_wahl}")
+
         str.write("---")
-        str.subheader("✅ Tagesziele")
-        str.checkbox("Garmin heute synchronisiert", value=garmin_success)
+        str.subheader("📝 Kraftraum Notizen")
+        str.text_area("Steigerungen festhalten:", placeholder="z.B. Beintraining: Split Squats erhöht...", key="prog_notes")
+
+        str.write("---")
+        str.subheader("💼 Finanzen & Tagesziele")
+        str.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
         str.checkbox("Handball-Dehnprogramm (15 Min)")
