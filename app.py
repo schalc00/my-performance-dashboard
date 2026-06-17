@@ -190,30 +190,71 @@ if check_password():
     g_data, garmin_success = fetch_garmin_data()
 
     # ==========================================
-    # INITIALISIERUNGEN & CLEANER (SESSION STATE)
+    # INITIALISIERUNGEN (SESSION STATE)
     # ==========================================
     if "meals_log" not in st.session_state:
         st.session_state.meals_log = []
     else:
         st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
 
-    # Rezeptliste komplett leer wie gefordert
     if "favorites" not in st.session_state:
         st.session_state.favorites = {"--- Bitte wählen ---": None}
 
-    # NEU: Strukturierter Speicher für deinen KI-Wochenplan
     if "ki_wochenplan" not in st.session_state:
         st.session_state.ki_wochenplan = {
             "Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], 
             "Freitag": [], "Samstag": [], "Sonntag": []
         }
 
+    # Makros für Alec (102kg - Defizit & Muskelschutz)
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
     verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
     verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
     verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
     verzehrt_fat = sum(m.get("fat", 0) for m in st.session_state.meals_log)
+
+    # REZEPT-DATENBANK (CHEFKOCH-STYLE FÜR 102KG SPORTLER)
+    recipe_book = {
+        "Frühstück 🥞": {
+            "Power-Oatmeal (High-Protein)": {
+                "kcal": 680, "protein": 52, "carbs": 85, "fat": 13,
+                "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren", "15g Mandeln"],
+                "anleitung": "Haferflocken mit kochendem Wasser quellen lassen. Quark und Proteinpulver unterrühren, mit Beeren und Mandeln toppen."
+            },
+            "Herzhaftes Rührei-Strammer-Max": {
+                "kcal": 600, "protein": 55, "carbs": 40, "fat": 22,
+                "zutaten": ["3 ganze Eier", "100g flüssiges Eiklar", "2 Scheiben Vollkornbrot", "50g Hähnchenbrust-Aufschnitt"],
+                "anleitung": "Eier und Eiklar verquirlen, als Rührei braten. Vollkornbrot mit Hähnchenbrust belegen und das Rührei darauf platzieren."
+            }
+        },
+        "Fleischgerichte 🍗": {
+            "Crispy Airfryer Chicken mit Süßkartoffel": {
+                "kcal": 650, "protein": 62, "carbs": 65, "fat": 12,
+                "zutaten": ["250g Hähnchenbrustfilet", "300g Süßkartoffel", "150g Brokkoli", "10ml Olivenöl", "Hähnchengewürz"],
+                "anleitung": "Fleisch und Süßkartoffeln würfeln, mit Olivenöl und Gewürzen marinieren. Bei 180°C für 18 Minuten in den Airfryer geben. Brokkoli dämpfen."
+            },
+            "Mageres Rinder-Tatar mit Reispfanne": {
+                "kcal": 710, "protein": 58, "carbs": 80, "fat": 14,
+                "zutaten": ["200g Rindertatar (mager)", "100g Jasminreis (ungekocht)", "1 Paprika", "50g Tomatenmark"],
+                "anleitung": "Reis kochen. Tatar mit Paprikawürfeln fettfrei anbraten, Tomatenmark einrühren und mit dem fertigen Reis vermengen."
+            }
+        },
+        "Knackige Salate 🥗": {
+            "Thunfisch-Kichererbsen-Power-Salat": {
+                "kcal": 550, "protein": 48, "carbs": 42, "fat": 18,
+                "zutaten": ["1 Dose Thunfisch (in eigenem Saft)", "150g Kichererbsen (Abtropf)", "100g Gurke", "50g Feta light", "10ml Olivenöl"],
+                "anleitung": "Kichererbsen abspülen. Thunfisch, Gemüse und Feta würfeln. Alles in einer Schüssel mit Olivenöl und Zitronensaft mischen."
+            }
+        },
+        "Abendbrot 🥪": {
+            "Harzer-Käse-Power-Stulle": {
+                "kcal": 490, "protein": 52, "carbs": 45, "fat": 6,
+                "zutaten": ["100g Harzer Käse", "2 Scheiben Eiweiß- oder Vollkornbrot", "100g Hüttenkäse light", "Radieschen & Schnittlauch"],
+                "anleitung": "Brot mit Hüttenkäse bestreichen, mit Harzer-Käse-Scheiben belegen und mit frischen Radieschen und Schnittlauch garnieren."
+            }
+        }
+    }
 
     alle_uebungen = [
         "Bankdrücken", "Klimmzüge", "Dips", "Langhantelrudern", "Face Pulls",
@@ -231,11 +272,9 @@ if check_password():
     # THE WORKOUT ENGINE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
-        
         g_today = g_data.get("garmin_strength_today", {})
         if ue_name in g_today:
             st.info(f"⌚ Garmin Live-Tracker heute: {', '.join(g_today[ue_name])}")
-            
         st.write("---")
         
         if st.session_state.current_workout_logs[ue_name]:
@@ -282,11 +321,10 @@ if check_password():
         st.subheader("🔥 Kalorien & Umsatz")
         st.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
         st.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
-        st.caption(f"Grundbedarf (BMR): {g_data['bmr_cal']} kcal")
         
         st.write("---")
         st.subheader("🏃 Aktivität")
-        st.metric("Schritte heute", f"{g_data['steps']:,}")
+        st.metric("Schritte heute", f"{g_data['steps']}")
         step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
         st.progress(step_perc)
         
@@ -318,61 +356,39 @@ if check_password():
                 for rs in g_data["raw_strength_sets"]:
                     st.write(rs)
         
-        st.caption("Klappe eine Übung auf, um Sätze live zu loggen oder deine Historie einzusehen.")
-        
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
         
         with tab1:
             st.subheader("Oberkörper Grundkraft")
-            with st.expander("🏋️ Bankdrücken (4 Sätze x 6 Wdh.)"):
-                render_exercise_engine("Bankdrücken", 85.0, 6)
-            with st.expander("🏋️ Klimmzüge mit Zusatzgewicht (4 Sätze x 6 Wdh.)"):
-                render_exercise_engine("Klimmzüge", 10.0, 6)
-            with st.expander("🏋️ Dips / Barrenstütz (3 Sätze x 8 Wdh.)"):
-                render_exercise_engine("Dips", 0.0, 8)
-            with st.expander("🏋️ Langhantelrudern vorgebeugt (3 Sätze x 8 Wdh.)"):
-                render_exercise_engine("Langhantelrudern", 70.0, 8)
-            with st.expander("🏋️ Face Pulls für Schulterstabilität (3 Sätze x 12 Wdh.)"):
-                render_exercise_engine("Face Pulls", 25.0, 12)
+            with st.expander("🏋️ Bankdrücken (4 Sätze x 6 Wdh.)"): render_exercise_engine("Bankdrücken", 85.0, 6)
+            with st.expander("🏋️ Klimmzüge mit Zusatzgewicht (4 Sätze x 6 Wdh.)"): render_exercise_engine("Klimmzüge", 10.0, 6)
+            with st.expander("🏋️ Dips / Barrenstütz (3 Sätze x 8 Wdh.)"): render_exercise_engine("Dips", 0.0, 8)
+            with st.expander("🏋️ Langhantelrudern vorgebeugt (3 Sätze x 8 Wdh.)"): render_exercise_engine("Langhantelrudern", 70.0, 8)
+            with st.expander("🏋️ Face Pulls für Schulterstabilität (3 Sätze x 12 Wdh.)"): render_exercise_engine("Face Pulls", 25.0, 12)
             
         with tab2:
             st.subheader("Handball Leg Day (Explosivität & Schutz)")
-            with st.expander("🏋️ Bulgarian Split Squats (4 Sätze x 8 Wdh. je Seite)"):
-                render_exercise_engine("Bulgarian Split Squats", 20.0, 8)
-            with st.expander("🏋️ Trap-Bar Kreuzheben (4 Sätze x 6 Wdh.)"):
-                render_exercise_engine("Trap-Bar Kreuzheben", 120.0, 6)
-            with st.expander("🏋️ Box Jumps / Rebound-Sprünge (3 Sätze x 5 Wdh.)"):
-                render_exercise_engine("Box Jumps", 60, 5)
-            with st.expander("🏋️ Lateral Lunges / Seitliche Ausfallschritte (3 Sätze x 8 Wdh.)"):
-                render_exercise_engine("Lateral Lunges", 16.0, 8)
-            with st.expander("🏋️ Nordic Hamstring Curls (3 Sätze x 6 Wdh.)"):
-                render_exercise_engine("Nordic Hamstring Curls", 0.0, 6)
+            with st.expander("🏋️ Bulgarian Split Squats (4 Sätze x 8 Wdh. je Seite)"): render_exercise_engine("Bulgarian Split Squats", 20.0, 8)
+            with st.expander("🏋️ Trap-Bar Kreuzheben (4 Sätze x 6 Wdh.)"): render_exercise_engine("Trap-Bar Kreuzheben", 120.0, 6)
+            with st.expander("🏋️ Box Jumps / Rebound-Sprünge (3 Sätze x 5 Wdh.)"): render_exercise_engine("Box Jumps", 60, 5)
+            with st.expander("🏋️ Lateral Lunges / Seitliche Ausfallschritte (3 Sätze x 8 Wdh.)"): render_exercise_engine("Lateral Lunges", 16.0, 8)
+            with st.expander("🏋️ Nordic Hamstring Curls (3 Sätze x 6 Wdh.)"): render_exercise_engine("Nordic Hamstring Curls", 0.0, 6)
             
         with tab3:
             st.subheader("Oberkörper Volumen (Hypertrophie)")
-            with st.expander("🏋️ Schrägbankdrücken mit Kurzhanteln (4x10)"):
-                render_exercise_engine("Schrägbankdrücken KH", 30.0, 10)
-            with st.expander("🏋️ Kabelrudern eng zum Bauch (4x10)"):
-                render_exercise_engine("Kabelrudern eng", 65.0, 10)
-            with st.expander("🏋️ Seitheben am Kabelzug (3x12)"):
-                render_exercise_engine("Seitheben", 12.5, 12)
-            with st.expander("🏋️ Incline Bicep Curls (3x12)"):
-                render_exercise_engine("Incline Curls", 15.0, 12)
-            with st.expander("🏋️ Tricep Rope Pushdowns (3x12)"):
-                render_exercise_engine("Trizepsdrücken", 30.0, 12)
+            with st.expander("🏋️ Schrägbankdrücken mit Kurzhanteln (4x10)"): render_exercise_engine("Schrägbankdrücken KH", 30.0, 10)
+            with st.expander("🏋️ Kabelrudern eng zum Bauch (4x10)"): render_exercise_engine("Kabelrudern eng", 65.0, 10)
+            with st.expander("🏋️ Seitheben am Kabelzug (3x12)"): render_exercise_engine("Seitheben", 12.5, 12)
+            with st.expander("🏋️ Incline Bicep Curls (3x12)"): render_exercise_engine("Incline Curls", 15.0, 12)
+            with st.expander("🏋️ Tricep Rope Pushdowns (3x12)"): render_exercise_engine("Trizepsdrücken", 30.0, 12)
             
         with tab4:
             st.subheader("Schnellkraft & Rumpfstabilität")
-            with st.expander("🏋️ Power Cleans / Umsetzen aus dem Hang (4x3 Wdh.)"):
-                render_exercise_engine("Power Cleans", 60.0, 3)
-            with st.expander("🏋️ Medizinball-Rotationswürfe gegen die Wand (3x8 Wdh.)"):
-                render_exercise_engine("Medizinball-Würfe", 6.0, 8)
-            with st.expander("🏋️ Romanian Deadlifts (3x10 Wdh.)"):
-                render_exercise_engine("Romanian Deadlifts", 90.0, 10)
-            with st.expander("🏋️ Ab-Wheel Rollouts (3x max.)"):
-                render_exercise_engine("Ab-Wheel Rollouts", 0.0, 10)
-            with st.expander("🏋️ Pallof Press am Kabelzug (3x12 Wdh.)"):
-                render_exercise_engine("Pallof Press", 20.0, 12)
+            with st.expander("🏋️ Power Cleans / Umsetzen aus dem Hang (4x3 Wdh.)"): render_exercise_engine("Power Cleans", 60.0, 3)
+            with st.expander("🏋️ Medizinball-Rotationswürfe gegen die Wand (3x8 Wdh.)"): render_exercise_engine("Medizinball-Würfe", 6.0, 8)
+            with st.expander("🏋️ Romanian Deadlifts (3x10 Wdh.)"): render_exercise_engine("Romanian Deadlifts", 90.0, 10)
+            with st.expander("🏋️ Ab-Wheel Rollouts (3x max.)"): render_exercise_engine("Ab-Wheel Rollouts", 0.0, 10)
+            with st.expander("🏋️ Pallof Press am Kabelzug (3x12 Wdh.)"): render_exercise_engine("Pallof Press", 20.0, 12)
             
         with tab5:
             st.subheader("Handball Intervall- & Grundlagenausdauer")
@@ -380,7 +396,7 @@ if check_password():
             st.checkbox(f"Session erfolgreich beendet: {ausdauer_wahl}")
 
     # ==========================================
-    # SPALTE 3: NUTRITION & KI-WOCHENPLANER
+    # SPALTE 3: NUTRITION & DYNAMISCHER REZEPTKATALOG (RECHTS)
     # ==========================================
     with col3:
         st.header("🍽️ Ernährung & Orga")
@@ -396,17 +412,47 @@ if check_password():
         nu_col1, nu_col2 = st.columns(2)
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
-        
-        with st.expander("📊 Tagesübersicht Makros (Woche)"):
-            overview_data = [
-                {"Tag": "Montag", "Kcal": 2550, "Protein": "201g", "Carbs": "250g", "Fat": "78g"},
-                {"Tag": "Dienstag", "Kcal": 2620, "Protein": "208g", "Carbs": "265g", "Fat": "81g"},
-                {"Tag": "Heute (Live)", "Kcal": verzehrt_kcal, "Protein": f"{verzehrt_protein}g", "Carbs": f"{verzehrt_carbs}g", "Fat": f"{verzehrt_fat}g"}
-            ]
-            st.dataframe(pd.DataFrame(overview_data), hide_index=True, use_container_width=True)
 
-        # NEU: DEIN INTERAKTIVER KI-WOCHENPLAN ZUM ABHAKEN
-        with st.expander("📅 Dein KI-Wochenplan (Zum Abhaken)", expanded=True):
+        # NEU: GEFORDERTES INTERAKTIVES "CHEFKOCH" REZEPT-MENÜ (Vorschläge zum Zusammenstellen)
+        with st.expander("👨‍🍳 Perform-All Chefkoch: Rezeptkatalog", expanded=True):
+            cat_choice = st.selectbox("Kategorie wählen:", list(recipe_book.keys()))
+            recipe_choice = st.selectbox("Rezept auswählen:", list(recipe_book[cat_choice].keys()))
+            
+            selected_rec = recipe_book[cat_choice][recipe_choice]
+            
+            # Layout wie auf einer professionellen Rezeptseite
+            st.markdown(f"### 📝 {recipe_choice}")
+            st.markdown(f"🔥 `{selected_rec['kcal']} kcal` | 🍗 `{selected_rec['protein']}g Protein` | 🌾 `{selected_rec['carbs']}g Carbs` | 🥑 `{selected_rec['fat']}g Fett`")
+            
+            st.markdown("**🛒 Zutaten (Maßgeschneiderte Mengen):**")
+            for zutat in selected_rec["zutaten"]:
+                st.markdown(f"- {zutat}")
+                
+            st.markdown("**🍳 Zubereitung:**")
+            st.caption(selected_rec["anleitung"])
+            
+            # Aktionsbuttons für das ausgewählte Rezept
+            act_col1, act_col2 = st.columns(2)
+            if act_col1.button("Heute essen (Loggen) ✅", key=f"log_chef_{recipe_choice}"):
+                st.st.session_state.meals_log.append({
+                    "name": recipe_choice, "kcal": selected_rec["kcal"], "protein": selected_rec["protein"],
+                    "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]
+                })
+                st.toast("Direkt in dein Tages-Log eingetragen!", icon="🍽️")
+                st.rerun()
+                
+            w_tag = act_col2.selectbox("In Wochenplan schieben:", list(st.session_state.ki_wochenplan.keys()), key=f"day_chef_{recipe_choice}")
+            if st.button("Für diesen Tag einplanen 📅", key=f"plan_chef_{recipe_choice}"):
+                st.session_state.ki_wochenplan[w_tag].append({
+                    "label": f"{recipe_choice} [{selected_rec['kcal']} kcal | {selected_rec['protein']}g P]",
+                    "instruction": selected_rec["anleitung"],
+                    "done": False
+                })
+                st.toast(f"Für {w_tag} eingeplant!", icon="📅")
+                st.rerun()
+
+        # DEIN INTERAKTIVER WOCHENPLAN
+        with st.expander("📅 Dein KI-Wochenplan (Zum Abhaken)", expanded=False):
             wochenplan_leer = True
             for tag, m_liste in st.session_state.ki_wochenplan.items():
                 if m_liste:
@@ -414,116 +460,78 @@ if check_password():
                     st.markdown(f"**{tag}**")
                     for m_idx, meal in enumerate(m_liste):
                         w_col1, w_col2 = st.columns([5, 1])
-                        # Checkbox zum Erledigen
                         checked = w_col1.checkbox(meal["label"], value=meal["done"], key=f"chk_{tag}_{m_idx}")
                         if checked != meal["done"]:
                             st.session_state.ki_wochenplan[tag][m_idx]["done"] = checked
                             st.rerun()
-                        # Löschen-Button aus der Woche
                         if w_col2.button("🗑️", key=f"del_wp_{tag}_{m_idx}"):
                             st.session_state.ki_wochenplan[tag].pop(m_idx)
                             st.rerun()
                         st.caption(f"*Zubereitung:* {meal['instruction']}")
-            if wochenplan_leer:
-                st.caption("Noch keine Mahlzeiten eingeplant. Nutze den KI-Planer unten!")
+            if wochenplan_leer: st.caption("Noch keine Mahlzeiten eingeplant.")
 
-        # NEU: DER INTERAKTIVE KI-REZEPT-PLANER (SPRACH-/TEXTSTEUERUNG)
+        # KI REZEPT-PLANER & ASSISTENT
         st.write("---")
-        st.subheader("🤖 KI Rezept-Planer & Assistent")
-        st.caption("Nutze die Mikrofon-Taste deiner Handy-Tastatur, um Rezepte einzusprechen!")
-        prompt_input = st.text_input("Was möchtest du kochen? (z.B. Protein Pancakes)", key="ki_prompt_box")
-        tag_auswahl = st.selectbox("Für welchen Wochentag einplanen?", list(st.session_state.ki_wochenplan.keys()))
+        st.subheader("🤖 Freier KI-Assistent & Sprachbefehl")
+        prompt_input = st.text_input("Spezifischen Extrawunsch einplanen (z.B. Protein Waffeln):", key="ki_prompt_box")
+        tag_auswahl = st.selectbox("Für welchen Tag?", list(st.session_state.ki_wochenplan.keys()))
         
-        if st.button("Rezept suchen & einplanen 🪄"):
+        if st.button("KI-Rezept generieren 🪄"):
             if prompt_input:
-                with st.spinner("Gemini analysiert und berechnet..."):
+                with st.spinner("Berechne..."):
                     try:
                         prompt_config = (
-                            f"Der Nutzer wiegt 102kg und befindet sich in einer harten Handball-Vorbereitung. "
-                            f"Finde ein passendes Rezept für: '{prompt_input}'. "
-                            f"Antworte exakt in diesem Format, getrennt durch das Wort '---TRENNUNG---':\n"
+                            f"Der Nutzer wiegt 102kg (Handball-Vorbereitung). Finde ein passendes Rezept für: '{prompt_input}'. "
+                            f"Antworte exakt in diesem Format, getrennt durch '---TRENNUNG---':\n"
                             f"Gerichtname [Kcal: Zahl | P: Zahlg | C: Zahlg | F: Zahlg]\n"
                             f"---TRENNUNG---\n"
-                            f"Kurze, knackige Kochanleitung in maximal 2 Sätzen."
+                            f"Kurze Kochanleitung in maximal 2 Sätzen."
                         )
                         response = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=prompt_config)
                         teile = response.text.strip().split("---TRENNUNG---")
-                        
                         g_label = teile[0].strip()
                         g_inst = teile[1].strip() if len(teile) > 1 else "Keine spezifische Anleitung."
                         
-                        # In den Wochenplan packen
-                        st.session_state.ki_wochenplan[tag_auswahl].append({
-                            "label": g_label,
-                            "instruction": g_inst,
-                            "done": False
-                        })
-                        st.toast(f"Eingeplant für {tag_auswahl}!", icon="📅")
+                        st.session_state.ki_wochenplan[tag_auswahl].append({"label": g_label, "instruction": g_inst, "done": False})
+                        st.toast(f"Eingeplant!", icon="📅")
                         st.rerun()
-                    except:
-                        st.error("Fehler beim KI-Abruf. Bitte noch einmal versuchen.")
+                    except: st.error("Fehler beim KI-Abruf.")
         
         st.write("---")
-        st.subheader("⭐ Wiederkehrende Mahlzeiten")
+        st.subheader("⭐ Wiederkehrende Mahlzeiten (Deine Favoriten)")
         fav_choice = st.selectbox("Schnellauswahl Lieblingsgerichte:", list(st.session_state.favorites.keys()))
-        
         if fav_choice != "--- Bitte wählen ---":
             meal_data = st.session_state.favorites[fav_choice]
-            st.caption(f"📊 {meal_data['kcal']} kcal | {meal_data['protein']}g P")
             if st.button(f"'{fav_choice}' loggen ✅"):
-                st.session_state.meals_log.append({
-                    "name": fav_choice, "kcal": meal_data["kcal"], "protein": meal_data["protein"], 
-                    "carbs": meal_data["carbs"], "fat": meal_data["fat"]
-                })
+                st.session_state.meals_log.append({"name": fav_choice, "kcal": meal_data["kcal"], "protein": meal_data["protein"], "carbs": meal_data["carbs"], "fat": meal_data["fat"]})
                 st.rerun()
         
         st.write("---")
         st.subheader("📸 Neuen Mahlzeit-Scanner")
         uploaded_file = st.file_uploader("Foto aufnehmen/hochladen...", type=["jpg", "png", "jpeg"])
-        
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
             st.image(image, caption="Dein Essen", width=200)
-            
             if st.button("Bild via Gemini scannen 🤖"):
                 with st.spinner("Berechne Makros..."):
                     try:
-                        prompt = (
-                            "Analysiere dieses Essen auf dem Bild. Schätze die Grammanzahl der "
-                            "Makronährstoffe (Protein, Kohlenhydrate, Fett) und Kalorien so präzise wie möglich. "
-                            "Antworte AUSSCHLIESSLICH in diesem exakten Format ohne Text davor oder danach:\n"
-                            "Name: [Name des Essens] | Kcal: [Zahl] | Protein: [Zahl] | Carbs: [Zahl] | Fat: [Zahl]"
-                        )
-                        response = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=[image, prompt])
+                        prompt = "Name: [Name] | Kcal: [Zahl] | Protein: [Zahl] | Carbs: [Zahl] | Fat: [Zahl]"
+                        response = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=[image, f"Schätze die Makros exakt im Format: {prompt}"])
                         result = response.text.strip().split(" | ")
-                        
-                        name = result[0].split(": ")[1]
-                        kcal = int(result[1].split(": ")[1])
-                        p = int(result[2].split(": ")[1])
-                        c = int(result[3].split(": ")[1])
-                        f = int(result[4].split(": ")[1])
-                        
-                        st.session_state.temp_meal = {"name": name, "kcal": kcal, "protein": p, "carbs": c, "fat": f}
-                    except:
-                        st.error("Fehler bei der Analyse.")
+                        st.session_state.temp_meal = {"name": result[0].split(": ")[1], "kcal": int(result[1].split(": ")[1]), "protein": int(result[2].split(": ")[1]), "carbs": int(result[3].split(": ")[1]), "fat": int(result[4].split(": ")[1])}
+                    except: st.error("Fehler bei der Analyse.")
             
             if "temp_meal" in st.session_state:
-                st.markdown("### 🔍 Bestätigen:")
                 edit_name = st.text_input("Name:", value=st.session_state.temp_meal["name"])
                 c_ki1, c_ki2, c_ki3 = st.columns(3)
                 edit_p = c_ki1.number_input("P:", value=st.session_state.temp_meal["protein"])
                 edit_c = c_ki2.number_input("C:", value=st.session_state.temp_meal["carbs"])
                 edit_f = c_ki3.number_input("F:", value=st.session_state.temp_meal["fat"])
                 edit_kcal = (edit_p * 4) + (edit_c * 4) + (edit_f * 9)
-                
                 add_to_favs = st.checkbox("Zu 'Wiederkehrende Mahlzeiten' hinzufügen? ⭐")
-                
                 if st.button("In Log eintragen ✅", key="add_scanned_meal"):
-                    st.session_state.meals_log.append({
-                        "name": edit_name, "kcal": edit_kcal, "protein": edit_p, "carbs": edit_c, "fat": edit_f
-                    })
-                    if add_to_favs:
-                        st.session_state.favorites[edit_name] = {"kcal": edit_kcal, "protein": edit_p, "carbs": edit_c, "fat": edit_f}
+                    st.session_state.meals_log.append({"name": edit_name, "kcal": edit_kcal, "protein": edit_p, "carbs": edit_c, "fat": edit_f})
+                    if add_to_favs: st.session_state.favorites[edit_name] = {"kcal": edit_kcal, "protein": edit_p, "carbs": edit_c, "fat": edit_f}
                     del st.session_state.temp_meal
                     st.rerun()
 
