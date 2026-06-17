@@ -108,21 +108,32 @@ if check_password():
 
     g_data, garmin_success = fetch_garmin_data()
 
-    # ERNÄHRUNGS-LOGIK (SESSION STATE)
+    # ==========================================
+    # ERNÄHRUNGS- & FAVORITEN-SPEICHER
+    # ==========================================
     if "verzehrt" not in st.session_state:
         st.session_state.verzehrt = {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}
         st.session_state.meals_log = []
 
+    # Hier hinterlegen wir deine dauerhaften Lieblingsgerichte
+    if "favorites" not in st.session_state:
+        st.session_state.favorites = {
+            "--- Bitte wählen ---": None,
+            "Alec's Standard Frühstück (Haferflocken & Protein)": {"kcal": 580, "protein": 45, "carbs": 75, "fat": 10},
+            "Post-Workout Shake (High Protein)": {"kcal": 240, "protein": 35, "carbs": 15, "fat": 2},
+            "Standard Hähnchen-Reis-Pfanne": {"kcal": 720, "protein": 55, "carbs": 90, "fat": 12}
+        }
+
     # 102kg Makro-Soll (Defizit + High Protein)
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
-    # APP HEADER (Perform All Branding)
+    # APP HEADER
     st.title("⚡ PERFORM ALL // ALEC")
     st.caption("High Performance Fitness & Nutrition Tracking")
     st.write("---")
 
-    # Layout-Generierung: 3 vertikal scrollbare Spalten (Workouts prominent in der Mitte)
-    col1, col2, col3 = st.columns([1, 1.4, 1.1], gap="large")
+    # Layout: Spalte 2 (Mitte) ist die breiteste für deinen Trainingsplan
+    col1, col2, col3 = st.columns([1, 1.5, 1.1], gap="large")
 
     # ==========================================
     # SPALTE 1: ALL GARMIN VITALS & CALORIES
@@ -130,7 +141,6 @@ if check_password():
     with col1:
         st.header("📊 Garmin Dashboard")
         
-        # Energie-Sektion
         st.subheader("🔥 Kalorien & Umsatz")
         st.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
         st.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
@@ -138,7 +148,6 @@ if check_password():
         
         st.write("---")
         
-        # Aktivitäts-Sektion
         st.subheader("🏃 Aktivität")
         st.metric("Schritte heute", f"{g_data['steps']:,}")
         step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
@@ -148,7 +157,6 @@ if check_password():
         
         st.write("---")
         
-        # Erholungs-Sektion
         st.subheader("💤 Recovery & Herz")
         st.metric("Schlaf-Score", f"{g_data['sleep_score']} / 100", f"{g_data['sleep_duration']} Std Dauer")
         st.metric("Ruhepuls (RHR)", f"{g_data['rhr']} bpm", f"Max heute: {g_data['max_hr']} bpm")
@@ -166,7 +174,6 @@ if check_password():
         st.header("📅 Trainingsplan & Einheiten")
         st.caption("Wähle deinen Tag und hake die Übungen nach dem Satz ab.")
         
-        # Das Herzstück: Die interaktiven Trainingspläne
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
         
         with tab1:
@@ -211,18 +218,17 @@ if check_password():
         st.text_area("Hier kannst du deine geschafften Gewichte für das nächste Mal eintragen:", placeholder="z.B. Bankdrücken erhöht auf 90kg...", key="prog_notes_all")
 
     # ==========================================
-    # SPALTE 3: NUTRITION & FINANCIAL ORGA
+    # SPALTE 3: NUTRITION & DROPDOWN & FINANZEN
     # ==========================================
     with col3:
         st.header("🍽️ Ernährung & Orga")
         
-        # Live-Restbudget-Berechnung
+        # Restbudget-Berechnung
         rem_kcal = max(tagesbedarf["kcal"] - st.session_state.verzehrt["kcal"], 0)
         rem_p = max(tagesbedarf["protein"] - st.session_state.verzehrt["protein"], 0)
         rem_c = max(tagesbedarf["carbs"] - st.session_state.verzehrt["carbs"], 0)
         rem_f = max(tagesbedarf["fat"] - st.session_state.verzehrt["fat"], 0)
         
-        # Makro-Übersicht oben rechts
         st.metric("Kcal Restbudget", f"{rem_kcal:,} kcal", f"Ziel: {tagesbedarf['kcal']}")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
@@ -230,10 +236,26 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
+        # NEU: DROPDOWN FÜR WIEDERKEHRENDE MAHLZEITEN
+        st.write("---")
+        st.subheader("⭐ Wiederkehrende Mahlzeiten")
+        fav_choice = st.selectbox("Schnellauswahl Lieblingsgerichte:", list(st.session_state.favorites.keys()))
+        
+        if fav_choice != "--- Bitte wählen ---":
+            meal_data = st.session_state.favorites[fav_choice]
+            st.caption(f"📊 {meal_data['kcal']} kcal | {meal_data['protein']}g P | {meal_data['carbs']}g C | {meal_data['fat']}g F")
+            if st.button(f"'{fav_choice}' loggen ✅"):
+                st.session_state.verzehrt["kcal"] += meal_data["kcal"]
+                st.session_state.verzehrt["protein"] += meal_data["protein"]
+                st.session_state.verzehrt["carbs"] += meal_data["carbs"]
+                st.session_state.verzehrt["fat"] += meal_data["fat"]
+                st.session_state.meals_log.append(f"{fav_choice} (+{meal_data['protein']}g P)")
+                st.rerun()
+        
         st.write("---")
         
         # Gemini Foto-Scanner
-        st.subheader("📸 Mahlzeit-Scanner")
+        st.subheader("📸 Neuen Mahlzeit-Scanner")
         uploaded_file = st.file_uploader("Foto aufnehmen/hochladen...", type=["jpg", "png", "jpeg"])
         
         if uploaded_file is not None:
@@ -271,8 +293,8 @@ if check_password():
                 edit_f = c_ki3.number_input("F:", value=st.session_state.temp_meal["fat"])
                 edit_kcal = (edit_p * 4) + (edit_c * 4) + (edit_f * 9)
                 
-                if st.button("In Log eintragen ✅"):
-                    st.session_state.verzehrt["kcal"] += edit_kcal
+                if st.button("In Log eintragen ✅", key="add_scanned_meal"):
+                    st.st.session_state.verzehrt["kcal"] += edit_kcal
                     st.session_state.verzehrt["protein"] += edit_p
                     st.session_state.verzehrt["carbs"] += edit_c
                     st.session_state.verzehrt["fat"] += edit_f
@@ -284,7 +306,7 @@ if check_password():
             for meal in st.session_state.meals_log:
                 st.caption(f"✔️ {meal}")
 
-        # Finanzen und feste tägliche Routinen nach unten gestapelt
+        # Finanzen und Routinen nach unten gestapelt
         st.write("---")
         st.subheader("💼 Finanzen & Daily Routine")
         st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
