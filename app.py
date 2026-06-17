@@ -53,7 +53,6 @@ if check_password():
             berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
             today = berlin_time.date().isoformat()
             
-            # Die stabilsten Haupt-Endpunkte abrufen
             stats = client.get_stats(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
@@ -81,7 +80,6 @@ if check_password():
             except:
                 pass
 
-            # Workouts und integrierte Sätze auslesen
             workout_list = []
             garmin_strength_today = {}
             raw_strength_sets = []
@@ -103,10 +101,8 @@ if check_password():
                             for idx, s in enumerate(sets):
                                 reps = s.get('reps', 0)
                                 weight = s.get('weight', 0)
-                                if weight > 1000:
-                                    weight = round(weight / 1000, 1)
-                                else:
-                                    weight = round(weight, 1)
+                                if weight > 1000: weight = round(weight / 1000, 1)
+                                else: weight = round(weight, 1)
                                     
                                 if reps > 0:
                                     ex_name = s.get('exerciseName', 'Unbekannte Übung').lower()
@@ -133,11 +129,9 @@ if check_password():
                                     elif "press" in ex_name: matched_key = "Pallof Press"
                                     
                                     if matched_key:
-                                        if matched_key not in garmin_strength_today:
-                                            garmin_strength_today[matched_key] = []
+                                        if matched_key not in garmin_strength_today: garmin_strength_today[matched_key] = []
                                         garmin_strength_today[matched_key].append(set_str)
-                        except:
-                            pass
+                        except: pass
             
             sleep_dto = sleep_data.get("dailySleepDTO", {}) if sleep_data else {}
             sleep_hours = round(sleep_dto.get("sleepTimeSeconds", 0) / 3600, 1) if sleep_dto else 0
@@ -152,8 +146,7 @@ if check_password():
             floors = stats.get("floorsClimbed", 0)
             
             stress_avg = stats.get("averageStressLevel", "--")
-            if stress_avg == -1 or stress_avg == 0:
-                stress_avg = "--"
+            if stress_avg == -1 or stress_avg == 0: stress_avg = "--"
 
             garmin_pack = {
                 "rhr": heart_rates.get("restingHeartRate", "--"),
@@ -206,26 +199,44 @@ if check_password():
             "Freitag": [], "Samstag": [], "Sonntag": []
         }
 
-    # Makros für Alec (102kg - Defizit & Muskelschutz)
+    # Tages-Soll für Alec (102kg - High Protein Defizit)
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
+    # Wochentag ermitteln für die automatische Wochenplan-Verrechnung
+    berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
+    tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+    heute_wochentag = tage_de[berlin_time.weekday()]
+
+    # DYNAMISCHE METRIK-BERECHNUNG (Berücksichtigt Sofort-Log UND abgehakte Wochenplan-Einträge von heute)
     verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
     verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
     verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
     verzehrt_fat = sum(m.get("fat", 0) for m in st.session_state.meals_log)
 
-    # REZEPT-DATENBANK (CHEFKOCH-STYLE FÜR 102KG SPORTLER)
+    for wp_meal in st.session_state.ki_wochenplan.get(heute_wochentag, []):
+        if wp_meal.get("done"):
+            verzehrt_kcal += wp_meal.get("kcal", 0)
+            verzehrt_protein += wp_meal.get("protein", 0)
+            verzehrt_carbs += wp_meal.get("carbs", 0)
+            verzehrt_fat += wp_meal.get("fat", 0)
+
+    # MASSIV ERWEITERTER CHEFKOCH-REZEPTKATALOG (MAẞGESCHNEIDERT FÜR DICH)
     recipe_book = {
         "Frühstück 🥞": {
             "Power-Oatmeal (High-Protein)": {
                 "kcal": 680, "protein": 52, "carbs": 85, "fat": 13,
                 "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren", "15g Mandeln"],
-                "anleitung": "Haferflocken mit kochendem Wasser quellen lassen. Quark und Proteinpulver unterrühren, mit Beeren und Mandeln toppen."
+                "anleitung": "Haferflocken mit heißem Wasser quellen lassen. Quark und Proteinpulver cremig unterrühren, danach mit Beeren und Mandeln toppen."
             },
             "Herzhaftes Rührei-Strammer-Max": {
                 "kcal": 600, "protein": 55, "carbs": 40, "fat": 22,
-                "zutaten": ["3 ganze Eier", "100g flüssiges Eiklar", "2 Scheiben Vollkornbrot", "50g Hähnchenbrust-Aufschnitt"],
-                "anleitung": "Eier und Eiklar verquirlen, als Rührei braten. Vollkornbrot mit Hähnchenbrust belegen und das Rührei darauf platzieren."
+                "zutaten": ["3 ganze Eier", "100g flüssiges Eiklar", "2 Scheiben Roggenvollkornbrot", "50g Hähnchenbrust-Aufschnitt"],
+                "anleitung": "Eier und Eiklar verquirlen, kräftig würzen und als Rührei braten. Vollkornbrot mit Hähnchenbrust belegen und das Rührei darauf anrichten."
+            },
+            "High-Protein Heidelbeer-Pancakes": {
+                "kcal": 590, "protein": 48, "carbs": 70, "fat": 8,
+                "zutaten": ["50g Hafermehl", "35g Whey/Mehrkomponenten-Protein", "100ml ungesüßte Mandelmilch", "1 Ei", "80g frische Heidelbeeren"],
+                "anleitung": "Alle Zutaten außer den Beeren zu einem glatten Teig verrühren. In einer beschichteten Pfanne backen und Heidelbeeren beim Wenden leicht eindrücken."
             }
         },
         "Fleischgerichte 🍗": {
@@ -237,31 +248,76 @@ if check_password():
             "Mageres Rinder-Tatar mit Reispfanne": {
                 "kcal": 710, "protein": 58, "carbs": 80, "fat": 14,
                 "zutaten": ["200g Rindertatar (mager)", "100g Jasminreis (ungekocht)", "1 Paprika", "50g Tomatenmark"],
-                "anleitung": "Reis kochen. Tatar mit Paprikawürfeln fettfrei anbraten, Tomatenmark einrühren und mit dem fertigen Reis vermengen."
+                "anleitung": "Reis kochen. Tatar mit Paprikawürfeln fettfrei in einer Pfanne anbraten, Tomatenmark einrühren und mit dem fertigen Reis vermengen."
+            },
+            "Puten-Brokkoli-Pfanne (Asia Style)": {
+                "kcal": 620, "protein": 65, "carbs": 60, "fat": 10,
+                "zutaten": ["250g Putenbrust", "200g Brokkoli", "80g Basmatireis", "20ml salzarme Sojasauce", "5g frischer Ingwer"],
+                "anleitung": "Reis kochen. Putenbrust in Streifen schneiden und scharf anbraten. Brokkoliröschen, Ingwer und Sojasauce dazugeben und bissfest dünsten."
+            },
+            "Rinderhüftsteak mit grünem Spargel": {
+                "kcal": 580, "protein": 54, "carbs": 30, "fat": 18,
+                "zutaten": ["220g Rinderhüftsteak", "250g grüner Spargel", "200g Drillinge (Kartoffeln)", "10g Halbfettbutter"],
+                "anleitung": "Kartoffeln vorkochen. Steak in der Pfanne scharf medium braten. Spargel und Kartoffelhälften mit etwas Butter in der Pfanne schwenken."
             }
         },
         "Knackige Salate 🥗": {
             "Thunfisch-Kichererbsen-Power-Salat": {
                 "kcal": 550, "protein": 48, "carbs": 42, "fat": 18,
-                "zutaten": ["1 Dose Thunfisch (in eigenem Saft)", "150g Kichererbsen (Abtropf)", "100g Gurke", "50g Feta light", "10ml Olivenöl"],
-                "anleitung": "Kichererbsen abspülen. Thunfisch, Gemüse und Feta würfeln. Alles in einer Schüssel mit Olivenöl und Zitronensaft mischen."
+                "zutaten": ["1 Dose Thunfisch (in eigenem Saft)", "150g Kichererbsen (Abtropfgewicht)", "100g Gurke", "50g Feta light", "10ml Olivenöl"],
+                "anleitung": "Kichererbsen abspülen. Thunfisch, Gemüse und Feta light würfeln. Alles in einer großen Schüssel mit Olivenöl und Zitronensaft vermengen."
+            },
+            "Hähnchen-Avocado-Performance-Salat": {
+                "kcal": 610, "protein": 54, "carbs": 20, "fat": 26,
+                "zutaten": ["200g Hähnchenbrustfilet", "80g reife Avocado", "150g Mix-Salat", "100g Kirschtomaten", "15ml leichtes Balsamico-Dressing"],
+                "anleitung": "Hähnchenbrust anbraten und in Streifen schneiden. Avocado würfeln. Salat und Tomaten waschen, mit Fleisch, Avocado und Dressing servieren."
+            },
+            "Linsen-Feta-Salat (High-Fiber)": {
+                "kcal": 580, "protein": 42, "carbs": 60, "fat": 14,
+                "zutaten": ["100g Tellerlinsen (vorgekocht)", "75g Feta light", "1 rote Paprika", "1/2 rote Zwiebel", "10ml Rapsöl"],
+                "anleitung": "Paprika und Zwiebel fein schneiden. Mit den Linsen und dem zerbröselten Feta light vermengen. Mit Rapsöl, Salz und Kräutern abschmecken."
             }
         },
         "Abendbrot 🥪": {
             "Harzer-Käse-Power-Stulle": {
                 "kcal": 490, "protein": 52, "carbs": 45, "fat": 6,
-                "zutaten": ["100g Harzer Käse", "2 Scheiben Eiweiß- oder Vollkornbrot", "100g Hüttenkäse light", "Radieschen & Schnittlauch"],
-                "anleitung": "Brot mit Hüttenkäse bestreichen, mit Harzer-Käse-Scheiben belegen und mit frischen Radieschen und Schnittlauch garnieren."
+                "zutaten": ["100g Harzer Käse", "2 Scheiben Roggenvollkornbrot", "100g Hüttenkäse light", "Radieschen & Schnittlauch"],
+                "anleitung": "Brot dick mit Hüttenkäse bestreichen, mit Harzer-Käse-Scheiben belegen und mit frischen Radieschen sowie Schnittlauch garnieren."
+            },
+            "Lachs-Frischkäse-Protein-Rolle": {
+                "kcal": 530, "protein": 46, "carbs": 35, "fat": 19,
+                "zutaten": ["120g Räucherlachs", "2 Protein-Wraps", "60g Frischkäse (0.2% Fett)", "eine Handvoll frischer Babyspinat"],
+                "anleitung": "Wraps mit magerem Frischkäse bestreichen, mit Spinatblättern und Räucherlachs belegen, eng aufrollen und in Scheiben schneiden."
+            },
+            "Hüttenkäse-Protein-Schnitt": {
+                "kcal": 460, "protein": 44, "carbs": 48, "fat": 8,
+                "zutaten": ["200g Hüttenkäse light", "2 Scheiben Roggenvollkornbrot", "50g Snack-Gurken", "Kresse, Salz & Pfeffer"],
+                "anleitung": "Den Hüttenkäse auf den Broten verteilen, kräftig salzen und pfeffern, mit Gurkenscheiben und Kresse finishen."
+            }
+        },
+        "Snacks 🍫": {
+            "Magerquark-Flavour-Bowl": {
+                "kcal": 290, "protein": 42, "carbs": 16, "fat": 1,
+                "zutaten": ["300g Magerquark", "50ml kaltes Wasser", "3g Flavour Drops (z.B. Vanille)", "50g frische Himbeeren"],
+                "anleitung": "Magerquark mit Wasser und Flavour Drops absolut cremig schlagen. Mit den frischen Himbeeren garnieren."
+            },
+            "Reiswaffeln mit Erdnussbutter": {
+                "kcal": 340, "protein": 32, "carbs": 30, "fat": 12,
+                "zutaten": ["3 Vollkorn-Reiswaffeln", "15g reine Erdnussbutter", "30g Isolat-Protein-Shake (mit Wasser)"],
+                "anleitung": "Erdnussbutter dünn auf den Reiswaffeln verstreichen. Den Protein-Shake separat dazu trinken."
+            },
+            "Beef Jerky Handvoll": {
+                "kcal": 150, "protein": 28, "carbs": 3, "fat": 2,
+                "zutaten": ["50g getrocknetes Rindfleisch (Beef Jerky)"],
+                "anleitung": "Direkt verzehrfertig als optimaler, fettfreier Snack für unterwegs oder direkt nach dem Handballtraining."
+            },
+            "Eier-Mandel-Duo": {
+                "kcal": 310, "protein": 22, "carbs": 4, "fat": 24,
+                "zutaten": ["2 hartgekochte Eier", "15g naturbelassene Mandeln"],
+                "anleitung": "Die Eier pellen und zusammen mit den gesunden Fetten aus den Mandeln als stabilisierenden Snack genießen."
             }
         }
     }
-
-    alle_uebungen = [
-        "Bankdrücken", "Klimmzüge", "Dips", "Langhantelrudern", "Face Pulls",
-        "Bulgarian Split Squats", "Trap-Bar Kreuzheben", "Box Jumps", "Lateral Lunges", "Nordic Hamstring Curls",
-        "Schrägbankdrücken KH", "Kabelrudern eng", "Seitheben", "Incline Curls", "Trizepsdrücken",
-        "Power Cleans", "Medizinball-Würfe", "Romanian Deadlifts", "Ab-Wheel Rollouts", "Pallof Press"
-    ]
 
     if "kraft_history" not in st.session_state:
         st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
@@ -269,7 +325,7 @@ if check_password():
     if "current_workout_logs" not in st.session_state:
         st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE WORKOUT ENGINE
+    # WORKOUT MECHANIK
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -324,7 +380,7 @@ if check_password():
         
         st.write("---")
         st.subheader("🏃 Aktivität")
-        st.metric("Schritte heute", f"{g_data['steps']}")
+        st.metric("Schritte heute", f"{g_data['steps']:,}")
         step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
         st.progress(step_perc)
         
@@ -413,28 +469,27 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
 
-        # NEU: GEFORDERTES INTERAKTIVES "CHEFKOCH" REZEPT-MENÜ (Vorschläge zum Zusammenstellen)
+        # COOKING ENGINE (CHEFKOCH SELECTION)
         with st.expander("👨‍🍳 Perform-All Chefkoch: Rezeptkatalog", expanded=True):
             cat_choice = st.selectbox("Kategorie wählen:", list(recipe_book.keys()))
             recipe_choice = st.selectbox("Rezept auswählen:", list(recipe_book[cat_choice].keys()))
             
             selected_rec = recipe_book[cat_choice][recipe_choice]
             
-            # Layout wie auf einer professionellen Rezeptseite
             st.markdown(f"### 📝 {recipe_choice}")
             st.markdown(f"🔥 `{selected_rec['kcal']} kcal` | 🍗 `{selected_rec['protein']}g Protein` | 🌾 `{selected_rec['carbs']}g Carbs` | 🥑 `{selected_rec['fat']}g Fett`")
             
-            st.markdown("**🛒 Zutaten (Maßgeschneiderte Mengen):**")
+            st.markdown("**🛒 Zutaten (Präzise berechnet):**")
             for zutat in selected_rec["zutaten"]:
                 st.markdown(f"- {zutat}")
                 
             st.markdown("**🍳 Zubereitung:**")
             st.caption(selected_rec["anleitung"])
             
-            # Aktionsbuttons für das ausgewählte Rezept
+            # REPARIERTE BUTTON-LOGIK (Entfernung von st.st.)
             act_col1, act_col2 = st.columns(2)
             if act_col1.button("Heute essen (Loggen) ✅", key=f"log_chef_{recipe_choice}"):
-                st.st.session_state.meals_log.append({
+                st.session_state.meals_log.append({
                     "name": recipe_choice, "kcal": selected_rec["kcal"], "protein": selected_rec["protein"],
                     "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]
                 })
@@ -446,13 +501,15 @@ if check_password():
                 st.session_state.ki_wochenplan[w_tag].append({
                     "label": f"{recipe_choice} [{selected_rec['kcal']} kcal | {selected_rec['protein']}g P]",
                     "instruction": selected_rec["anleitung"],
-                    "done": False
+                    "done": False,
+                    "kcal": selected_rec["kcal"], "protein": selected_rec["protein"],
+                    "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]
                 })
                 st.toast(f"Für {w_tag} eingeplant!", icon="📅")
                 st.rerun()
 
-        # DEIN INTERAKTIVER WOCHENPLAN
-        with st.expander("📅 Dein KI-Wochenplan (Zum Abhaken)", expanded=False):
+        # DYNAMISCHER WOCHENPLAN (Abhaken verringert sofort Restbudget heute!)
+        with st.expander("📅 Dein Wochenplan (Zum Abhaken)", expanded=False):
             wochenplan_leer = True
             for tag, m_liste in st.session_state.ki_wochenplan.items():
                 if m_liste:
@@ -470,7 +527,7 @@ if check_password():
                         st.caption(f"*Zubereitung:* {meal['instruction']}")
             if wochenplan_leer: st.caption("Noch keine Mahlzeiten eingeplant.")
 
-        # KI REZEPT-PLANER & ASSISTENT
+        # KI ASSISTENT FÜR SPEZIFISCHE EXTRAWÜNSCHE
         st.write("---")
         st.subheader("🤖 Freier KI-Assistent & Sprachbefehl")
         prompt_input = st.text_input("Spezifischen Extrawunsch einplanen (z.B. Protein Waffeln):", key="ki_prompt_box")
@@ -483,16 +540,27 @@ if check_password():
                         prompt_config = (
                             f"Der Nutzer wiegt 102kg (Handball-Vorbereitung). Finde ein passendes Rezept für: '{prompt_input}'. "
                             f"Antworte exakt in diesem Format, getrennt durch '---TRENNUNG---':\n"
-                            f"Gerichtname [Kcal: Zahl | P: Zahlg | C: Zahlg | F: Zahlg]\n"
+                            f"Gerichtname\n"
+                            f"---TRENNUNG---\n"
+                            f"Kcal: [Zahl] | P: [Zahl] | C: [Zahl] | F: [Zahl]\n"
                             f"---TRENNUNG---\n"
                             f"Kurze Kochanleitung in maximal 2 Sätzen."
                         )
-                        response = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=prompt_config)
+                        response = gemini_client.models.generate_content(model='gemini-2.5-flash', contents=[prompt_config])
                         teile = response.text.strip().split("---TRENNUNG---")
-                        g_label = teile[0].strip()
-                        g_inst = teile[1].strip() if len(teile) > 1 else "Keine spezifische Anleitung."
+                        g_name = teile[0].strip()
+                        macros_raw = teile[1].strip().split(" | ")
+                        g_inst = teile[2].strip() if len(teile) > 2 else "Keine spezifische Anleitung."
                         
-                        st.session_state.ki_wochenplan[tag_auswahl].append({"label": g_label, "instruction": g_inst, "done": False})
+                        k = int(macros_raw[0].split(": ")[1])
+                        p = int(macros_raw[1].split(": ")[1])
+                        c = int(macros_raw[2].split(": ")[1])
+                        f = int(macros_raw[3].split(": ")[1])
+                        
+                        st.session_state.ki_wochenplan[tag_auswahl].append({
+                            "label": f"{g_name} [{k} kcal | {p}g P]", "instruction": g_inst, "done": False,
+                            "kcal": k, "protein": p, "carbs": c, "fat": f
+                        })
                         st.toast(f"Eingeplant!", icon="📅")
                         st.rerun()
                     except: st.error("Fehler beim KI-Abruf.")
@@ -535,6 +603,7 @@ if check_password():
                     del st.session_state.temp_meal
                     st.rerun()
 
+        # DAS TAGESPROTOKOLL
         if st.session_state.meals_log:
             st.write("---")
             st.markdown("**Heutige Mahlzeiten:**")
