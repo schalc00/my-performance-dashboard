@@ -200,6 +200,7 @@ if check_password():
             "Freitag": [], "Samstag": [], "Sonntag": []
         }
 
+    # Tages-Soll für Alec (102kg - High Protein Defizit)
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
     # Wochentag für Verrechnung bestimmen
@@ -207,6 +208,7 @@ if check_password():
     tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
     heute_wochentag = tage_de[berlin_time.weekday()]
 
+    # KORREKT: HIER ERFOLGEN DIE DEFINITIONEN DIREKT AM ANFANG (Bulletproof gegen NameErrors!)
     verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
     verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
     verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
@@ -219,7 +221,12 @@ if check_password():
             verzehrt_carbs += wp_meal.get("carbs", 0)
             verzehrt_fat += wp_meal.get("fat", 0)
 
-    # MASSIV ERWEITERTER CHEFKOCH-REZEPTKATALOG (INKL. VEGGIE & FISCH)
+    rem_kcal = max(tagesbedarf["kcal"] - verzehrt_kcal, 0)
+    rem_p = max(tagesbedarf["protein"] - verzehrt_protein, 0)
+    rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
+    rem_f = max(tagesbedarf["fat"] - verzehrt_fat, 0)
+
+    # REZEPTKATALOG (MEAT, FISH, VEGGIE, BREAKFAST, SNACKS)
     recipe_book = {
         "Frühstück 🥞": {
             "Power-Oatmeal (High-Protein)": {
@@ -235,7 +242,7 @@ if check_password():
             "High-Protein Heidelbeer-Pancakes": {
                 "kcal": 590, "protein": 48, "carbs": 70, "fat": 8,
                 "zutaten": ["50g Hafermehl", "35g Whey-Protein", "100ml ungesüßte Mandelmilch", "1 Ei", "80g frische Heidelbeeren"],
-                "anleitung": "Zutaten außer Beeren zu Teig verrühren. In beschichteter Pfanne backen, Heidelbeeren beim Wenden leicht eindrücken."
+                "anleitung": "Zutaten aufmixen, in beschichteter Pfanne backen. Heidelbeeren beim Wenden leicht eindrücken."
             }
         },
         "Fleischgerichte 🍗": {
@@ -247,60 +254,38 @@ if check_password():
             "Puten-Brokkoli-Pfanne (Asia Style)": {
                 "kcal": 620, "protein": 65, "carbs": 60, "fat": 10,
                 "zutaten": ["250g Putenbrust", "200g Brokkoli", "80g Basmatireis", "20ml salzarme Sojasauce", "5g frischer Ingwer"],
-                "anleitung": "Reis kochen. Putenbrust in Streifen schneiden und scharf anbraten. Brokkoliröschen, Ingwer und Sojasauce dazugeben und dünsten."
+                "anleitung": "Reis kochen. Putenbrust scharf anbraten. Brokkoliröschen, Ingwer und Sojasauce dazugeben und dünsten."
             }
         },
         "Fischgerichte 🐟": {
             "Gebackenes Lachsfilet mit Quinoa": {
                 "kcal": 640, "protein": 48, "carbs": 55, "fat": 22,
                 "zutaten": ["200g frisches Lachsfilet", "70g Quinoa (ungekocht)", "150g grüner Spargel", "1/2 Zitrone", "Meersalz & Dill"],
-                "anleitung": "Quinoa nach Packung kochen. Lachs mit Zitronensaft, Salz und Dill würzen und im Ofen bei 180°C für 15 Min. backen. Spargel kurz anbraten."
+                "anleitung": "Quinoa kochen. Lachs mit Zitronensaft, Salz und Dill würzen und im Ofen bei 180°C für 15 Min. backen. Spargel kurz anbraten."
             },
             "Knoblauch-Chili-Garnelen mit Reis": {
                 "kcal": 580, "protein": 50, "carbs": 75, "fat": 8,
-                "zutaten": ["250g Riesengarnelen (geschält)", "80g Jasminreis", "1 rote Paprika", "100g Zuckerschoten", "5ml Sesamöl", "Knoblauch & Chili"],
-                "anleitung": "Reis kochen. Sesamöl erhitzen, gehackten Knoblauch und Chili anschwitzen. Garnelen und Gemüse dazugeben und 5–7 Minuten scharf pfannenrühren."
-            },
-            "Kabeljau-Filet aus dem Ofen mit Kartoffeln": {
-                "kcal": 530, "protein": 52, "carbs": 60, "fat": 7,
-                "zutaten": ["250g Kabeljaufilet", "300g Kartoffeln", "200g Zucchini & Tomaten", "10ml Olivenöl", "Kräuter der Provence"],
-                "anleitung": "Kartoffeln und Gemüse würfeln, mit Olivenöl und Kräutern auf einem Blech verteilen. Kabeljau oben auflegen und bei 200°C für 20 Minuten garen."
+                "zutaten": ["250g Riesengarnelen", "80g Jasminreis", "1 Paprika", "100g Zuckerschoten", "5ml Sesamöl", "Knoblauch & Chili"],
+                "anleitung": "Reis kochen. Sesamöl erhitzen, Knoblauch und Chili anschwitzen. Garnelen und Gemüse 5–7 Minuten scharf pfannenrühren."
             }
         },
         "Vegetarisch 🌱": {
             "Sojageschnetzeltes in Pilz-Rahm-Sauce": {
                 "kcal": 590, "protein": 53, "carbs": 58, "fat": 11,
                 "zutaten": ["60g Sojaschnetzel (trocken)", "70g Vollkornnudeln", "200g Champignons", "100g Leicht-Kochcreme (7%)", "Gemüsebrühe"],
-                "anleitung": "Schnetzel in heißer Brühe einweichen, danach ausdrücken und scharf anbraten. Pilze mitbraten, mit Kochcreme ablöschen. Nudeln kochen."
-            },
-            "Kichererbsen-Linsen-Curry mit Skyr": {
-                "kcal": 640, "protein": 45, "carbs": 80, "fat": 12,
-                "zutaten": ["150g Kichererbsen (Abtropf)", "100g rote Linsen (vorgekocht)", "50g Basmatireis", "150g Skyr (natur)", "10g Currypaste"],
-                "anleitung": "Reis kochen. Currypaste in einer Pfanne anrühren, Kichererbsen und Linsen mit etwas Wasser hinzugeben und köcheln lassen. Skyr als kalten Protein-Klecks oben drauf."
+                "anleitung": "Schnetzel in heißer Brühe einweichen, ausdrücken und scharf anbraten. Pilze mitbraten, mit Kochcreme ablöschen."
             },
             "Protein-Bowl mit Hüttenkäse & Falafel": {
                 "kcal": 580, "protein": 44, "carbs": 65, "fat": 14,
-                "zutaten": ["200g Hüttenkäse light (0,2%)", "100g fettfreie Airfryer-Falafel", "60g Couscous (ungekocht)", "100g Kirschtomaten & Gurke"],
-                "anleitung": "Couscous mit heißem Wasser übergießen. Gemüse würfeln. Couscous, Hüttenkäse, Gemüse und die knusprigen Falafel nebeneinander in einer Schüssel anrichten."
-            }
-        },
-        "Knackige Salate 🥗": {
-            "Thunfisch-Kichererbsen-Power-Salat": {
-                "kcal": 550, "protein": 48, "carbs": 42, "fat": 18,
-                "zutaten": ["1 Dose Thunfisch (in eigenem Saft)", "150g Kichererbsen", "100g Gurke", "50g Feta light", "10ml Olivenöl"],
-                "anleitung": "Kichererbsen abspülen. Thunfisch, Gemüse und Feta light würfeln. Alles mit Olivenöl und Zitronensaft vermengen."
-            },
-            "Hähnchen-Avocado-Performance-Salat": {
-                "kcal": 610, "protein": 54, "carbs": 20, "fat": 26,
-                "zutaten": ["200g Hähnchenbrustfilet", "80g reife Avocado", "150g Mix-Salat", "100g Kirschtomaten", "15ml Balsamico-Dressing"],
-                "anleitung": "Hähnchenbrust anbraten und schneiden. Avocado würfeln. Salat waschen, mit Fleisch, Avocado und Dressing servieren."
+                "zutaten": ["200g Hüttenkäse light (0,2%)", "100g Airfryer-Falafel", "60g Couscous", "100g Kirschtomaten & Gurke"],
+                "anleitung": "Couscous mit heißem Wasser quellen lassen. Couscous, Hüttenkäse, Gemüse und krosse Falafel in einer Bowl servieren."
             }
         },
         "Abendbrot 🥪": {
             "Harzer-Käse-Power-Stulle": {
                 "kcal": 490, "protein": 52, "carbs": 45, "fat": 6,
                 "zutaten": ["100g Harzer Käse", "2 Scheiben Roggenvollkornbrot", "100g Hüttenkäse light", "Radieschen & Schnittlauch"],
-                "anleitung": "Brot dick mit Hüttenkäse bestreichen, mit Harzer-Käse-Scheiben belegen und mit frischen Radieschen sowie Schnittlauch garnieren."
+                "anleitung": "Brot dick mit Hüttenkäse bestreichen, mit Harzer belegen und mit frischen Radieschen sowie Schnittlauch garnieren."
             },
             "Lachs-Frischkäse-Protein-Rolle": {
                 "kcal": 530, "protein": 46, "carbs": 35, "fat": 19,
@@ -335,7 +320,7 @@ if check_password():
     if "current_workout_logs" not in st.session_state:
         st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE WORKOUT ENGINE
+    # WORKOUT ENGINE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -390,7 +375,7 @@ if check_password():
         
         st.write("---")
         st.subheader("🏃 Aktivität")
-        st.metric("Schritte heute", f"{g_data['steps']:,}")
+        st.metric("Schritte heute", f"{g_data['steps']}")
         step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
         st.progress(step_perc)
         
@@ -460,12 +445,13 @@ if check_password():
             st.checkbox(f"Session erfolgreich beendet: {ausdauer_wahl}")
 
     # ==========================================
-    # SPALTE 3: NUTRITION & COOKING PLATFORM (RECHTS)
+    # SPALTE 3: NUTRITION & DYNAMISCHER REZEPTKATALOG (RECHTS)
     # ==========================================
     with col3:
         st.header("🍽️ Ernährung & Orga")
         
-        st.metric("Kcal Restbudget", f"{rem_kcal:,} kcal", f"Ziel: {tagesbedarf['kcal']}")
+        # Sicher formatiertes Budget-Feld (Fehler behoben)
+        st.metric("Kcal Restbudget", f"{rem_kcal} kcal", f"Ziel: {tagesbedarf['kcal']}")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
         nu_col1, nu_col2 = st.columns(2)
@@ -488,14 +474,14 @@ if check_password():
             st.markdown("**🍳 Zubereitung:**")
             st.caption(selected_rec["anleitung"])
             
-            # REPARIERTE AUTOMATISCHE VERRECHNUNG
+            # REPARIERTE AUTOMATISCHE VERRECHNUNG (Kein st.st. mehr!)
             act_col1, act_col2 = st.columns(2)
             if act_col1.button("Heute essen (Loggen) ✅", key=f"log_chef_{recipe_choice}"):
                 st.session_state.meals_log.append({
                     "name": recipe_choice, "kcal": selected_rec["kcal"], "protein": selected_rec["protein"],
                     "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]
                 })
-                st.toast("Eingetragen!", icon="🍽️")
+                st.toast("Direkt in dein Tages-Log eingetragen!", icon="🍽️")
                 st.rerun()
                 
             w_tag = act_col2.selectbox("In Wochenplan schieben:", list(st.session_state.ki_wochenplan.keys()), key=f"day_chef_{recipe_choice}")
@@ -506,7 +492,7 @@ if check_password():
                     "kcal": selected_rec["kcal"], "protein": selected_rec["protein"],
                     "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]
                 })
-                st.toast(f"Eingeplant!", icon="📅")
+                st.toast(f"Für {w_tag} eingeplant!", icon="📅")
                 st.rerun()
 
         # DYNAMISCHER WOCHENPLAN (Abhaken verringert Restbudget!)
