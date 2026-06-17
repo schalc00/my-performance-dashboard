@@ -109,10 +109,13 @@ if check_password():
     g_data, garmin_success = fetch_garmin_data()
 
     # ==========================================
-    # ALLGEMEINE ERNÄHRUNGS- & FAVORITEN-STRUKTUR
+    # ABSICHERUNG GEGEN TYP-FEHLER (DASHBOARD-CLEANER)
     # ==========================================
     if "meals_log" not in st.session_state:
-        st.session_state.meals_log = [] # Speichert Mahlzeiten als strukturierte Objekte
+        st.session_state.meals_log = []
+    else:
+        # Bereinigt alte Text-Reste im Hintergrund, damit die App nie wieder wegen Zeile 129 abstürzt
+        st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
 
     if "favorites" not in st.session_state:
         st.session_state.favorites = {
@@ -122,14 +125,14 @@ if check_password():
             "Standard Hähnchen-Reis-Pfanne": {"kcal": 720, "protein": 55, "carbs": 90, "fat": 12}
         }
 
-    # 102kg Makro-Soll (Ziele: Defizit + Erhalt der Handball-Explosivkraft)
+    # Makros für Alec (102kg - Defizit & Muskelschutz)
     tagesbedarf = {"kcal": 2600, "protein": 204, "carbs": 260, "fat": 80}
 
-    # Live-Berechnung der heute konsumierten Werte aus den Objekten (verhindert Berechnungsfehler)
-    verzehrt_kcal = sum(m["kcal"] for m in st.session_state.meals_log)
-    verzehrt_protein = sum(m["protein"] for m in st.session_state.meals_log)
-    verzehrt_carbs = sum(m["carbs"] for m in st.session_state.meals_log)
-    verzehrt_fat = sum(m["fat"] for m in st.session_state.meals_log)
+    # Live-Berechnung der Makros
+    verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
+    verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
+    verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
+    verzehrt_fat = sum(m.get("fat", 0) for m in st.session_state.meals_log)
 
     # All deine Übungen für die automatische Generierung von Verlauf & Feedback
     alle_uebungen = [
@@ -141,28 +144,29 @@ if check_password():
 
     if "kraft_history" not in st.session_state:
         st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
-        # Startwerte für deine Kernübungen vorbefüllen
         st.session_state.kraft_history["Bankdrücken"] = [{"Datum": "12.06.", "Leistung": "82.5 kg x 6, 6, 6"}, {"Datum": "15.06.", "Leistung": "85.0 kg x 6, 6, 5"}]
         st.session_state.kraft_history["Trap-Bar Kreuzheben"] = [{"Datum": "12.06.", "Leistung": "115.0 kg x 6, 6, 6"}, {"Datum": "16.06.", "Leistung": "120.0 kg x 6, 6, 6"}]
 
     if "current_workout_logs" not in st.session_state:
         st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # HELPER-FUNKTION FÜR JEDE EINZELNE ÜBUNG (Untermenü, Live-Feedback, Ergebnisse)
+    # THE CORE ENGINE: SATZ-FÜR-SATZ TRACKING MIT LÖSCHFUNKTION & HISTORIE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
+        st.write("---")
         
-        # 1. Unmittelbares Feedback über bereits eingetragene Sätze von heute
+        # 1. Sofortiges Live-Feedback eingetragener Sätze inklusive Lösch-X
         if st.session_state.current_workout_logs[ue_name]:
-            st.markdown("*Heutige Sätze in dieser Session:*")
+            st.markdown("**Eingetragene Sätze für heute:**")
             for idx, sa in enumerate(st.session_state.current_workout_logs[ue_name]):
                 s_col1, s_col2 = st.columns([5, 1])
-                s_col1.write(f"Satz {idx+1}: **{sa}**")
-                if s_col2.button("❌", key=f"del_set_{ue_name}_{idx}", help="Diesen Satz löschen"):
+                s_col1.markdown(f"`Satz {idx+1}:` **{sa}**")
+                if s_col2.button("❌", key=f"del_set_{ue_name}_{idx}", help="Diesen Satz korrigieren"):
                     st.session_state.current_workout_logs[ue_name].pop(idx)
                     st.rerun()
+            st.write("---")
 
-        # 2. Eingabefelder für den aktuellen Satz
+        # 2. Satz-Eingabe-Felder
         se_col1, se_col2 = st.columns(2)
         weight_input = se_col1.number_input("Gewicht (kg):", value=float(default_w), step=2.5, key=f"w_in_{ue_name}")
         reps_input = se_col2.number_input("Wiederholungen:", value=int(default_r), step=1, key=f"r_in_{ue_name}")
@@ -170,26 +174,25 @@ if check_password():
         b_col1, b_col2 = st.columns(2)
         if b_col1.button("Satz loggen ➕", key=f"btn_add_{ue_name}"):
             st.session_state.current_workout_logs[ue_name].append(f"{weight_input} kg x {reps_input} Wdh.")
-            st.toast(f"💪 Satz {len(st.session_state.current_workout_logs[ue_name])} eingetragen!", icon="✅")
+            st.toast(f"Satz {len(st.session_state.current_workout_logs[ue_name])} live gesichert!", icon="💪")
             st.rerun()
 
         if st.session_state.current_workout_logs[ue_name]:
-            if b_col2.button("Session beenden & sichern 💾", key=f"btn_save_{ue_name}"):
+            if b_col2.button("Übung beenden & speichern 💾", key=f"btn_save_{ue_name}"):
                 saetze_zusammenfassung = ", ".join(st.session_state.current_workout_logs[ue_name])
                 heute_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
                 st.session_state.kraft_history[ue_name].append({"Datum": heute_datum, "Leistung": saetze_zusammenfassung})
-                st.session_state.current_workout_logs[ue_name] = [] # Reset für heute
-                st.toast("In Trainingsverlauf überschrieben!", icon="💾")
+                st.session_state.current_workout_logs[ue_name] = [] 
+                st.toast("Komplette Übung in Verlauf übertragen!", icon="💾")
                 st.rerun()
 
-        # 3. Das geforderte "Ergebnisse"-Feld für lückenlose Historie
+        # 3. Das geforderte "Ergebnisse"-Untermenü
         with st.expander("📈 Ergebnisse / Alle vergangenen Trainings"):
             df_history = pd.DataFrame(st.session_state.kraft_history[ue_name])
             st.dataframe(df_history, hide_index=True, use_container_width=True)
 
-    # APP HEADER
+    # APP LAYOUT RENDERING
     st.title("⚡ PERFORM ALL // ALEC")
-    st.caption("High Performance Fitness & Nutrition Tracking")
     st.write("---")
 
     col1, col2, col3 = st.columns([1, 1.5, 1.1], gap="large")
@@ -225,7 +228,7 @@ if check_password():
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
-        st.caption("Klappe eine Übung auf, um Sätze einzutragen oder Ergebnisse zu sehen.")
+        st.caption("Klappe eine Übung auf, um Sätze live zu loggen oder deine Historie einzusehen.")
         
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
         
@@ -292,7 +295,7 @@ if check_password():
     with col3:
         st.header("🍽️ Ernährung & Orga")
         
-        # Exakte Restbudget-Berechnung aus den Live-Werten
+        # Restbudget-Berechnung
         rem_kcal = max(tagesbedarf["kcal"] - verzehrt_kcal, 0)
         rem_p = max(tagesbedarf["protein"] - verzehrt_protein, 0)
         rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
@@ -305,7 +308,7 @@ if check_password():
         nu_col1.metric("Carbs Rest", f"{rem_c}g")
         nu_col2.metric("Fat Rest", f"{rem_f}g")
         
-        # NEU: DIE GEFORDERTE WOCHENÜBERSICHT (Einklappbar)
+        # DIE WOCHENÜBERSICHT
         with st.expander("📊 Wochenübersicht (Makros)"):
             overview_data = [
                 {"Tag": "Montag", "Kcal": 2550, "Protein": "201g", "Carbs": "250g", "Fat": "78g"},
@@ -384,7 +387,7 @@ if check_password():
                     del st.session_state.temp_meal
                     st.rerun()
 
-        # NEU: DAS ERNÄHRUNGSPROTOKOLL MIT DEM GEFORDERTEN LÖSCH-X
+        # DAS ERNÄHRUNGSPROTOKOLL MIT LÖSCH-X
         if st.session_state.meals_log:
             st.write("---")
             st.markdown("**Heutige Mahlzeiten:**")
@@ -395,7 +398,7 @@ if check_password():
                     st.session_state.meals_log.pop(idx)
                     st.rerun()
 
-        # Finanzen und Routinen nach unten gestapelt
+        # Finanzen
         st.write("---")
         st.subheader("💼 Finanzen & Daily Routine")
         st.metric(label="Verfügbares Netto (Monat)", value="1.850,00 €")
