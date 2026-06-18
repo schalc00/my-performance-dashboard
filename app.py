@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 import pandas as pd
 import datetime
 import zoneinfo
@@ -272,10 +272,10 @@ if check_password():
     rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
     rem_f = max(tagesbedarf["fat"] - verzehrt_fat, 0)
 
-    # REZEPT-DATENBANK
+    # REZEPTKATALOG
     recipe_book = {
         "Frühstück 🥞": {
-            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren."},
+            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
             "Herzhaftes Rührei-Strammer-Max": {"kcal": 600, "protein": 55, "carbs": 40, "fat": 22, "zutaten": ["3 Eier", "100g Eiklar", "2 Scheiben Roggenbrot"], "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot servieren."}
         },
         "Fleischgerichte 🍗": {
@@ -294,7 +294,7 @@ if check_password():
         }
     }
 
-    # ENGINE FÜR DIE INSIDE-TAB TRACKING FUNKTIONEN
+    # EXERCISE ENGINE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -346,9 +346,10 @@ if check_password():
     elif st.session_state.selected_date == heute_datum + datetime.timedelta(days=1): display_label = f"Morgen ({formatted_date_view})"
     else: display_label = f"{selected_weekday}, {formatted_date_view}"
         
-    # KORREKTUR: Mit "with" Block ausgeführt -> Schützt vor dem Python 3.14 Decorator Bug!
+    # CRITICAL KORREKTUR FÜR PYTHON 3.14: Den f-String komplett VORAB isolieren!
+    html_titel = f"<h2 style='text-align: center; color: #00f0ff; margin-top: -10px; font-weight: 900;'>{display_label}</h2>"
     with nav_col2:
-        st.markdown(f"<h2 style='text-align: center; color: #00f0ff; margin-top: -10px; font-weight: 900;'>{display_label}</h2>", unsafe_allowed_html=True)
+        st.markdown(html_titel, unsafe_allow_html=True)
     
     with nav_col3:
         if st.session_state.selected_date < heute_datum + datetime.timedelta(days=7):
@@ -546,7 +547,7 @@ if check_password():
                 if st.session_state.cardio_history:
                     for idx, run in enumerate(st.session_state.cardio_history):
                         r_col1, r_col2 = st.columns([5, 1])
-                        with r_col1: r_col1.markdown(f"`{run['Datum']}` **{run['Typ']}**: {run['Distanz']} in {run['Dauer']} ({run['Pace']} | {run['Speed']})")
+                        with r_col1: st.markdown(f"`{run['Datum']}` **{run['Typ']}**: {run['Distanz']} in {run['Dauer']} ({run['Pace']} | {run['Speed']})")
                         with r_col2:
                             if st.button("❌", key=f"del_c_hist_{idx}"):
                                 st.session_state.cardio_history.pop(idx)
@@ -597,7 +598,7 @@ if check_password():
                 if st.session_state.swim_history:
                     for idx, swim in enumerate(st.session_state.swim_history):
                         sw_c1, sw_col2 = st.columns([5, 1])
-                        with sw_c1: sw_c1.markdown(f"`{swim['Datum']}` **Schwimmen**: {swim['Distanz']} in {swim['Dauer']} (Ø-Pace: `{swim['Pace']}`)")
+                        with sw_c1: st.markdown(f"`{swim['Datum']}` **Schwimmen**: {swim['Distanz']} in {swim['Dauer']} (Ø-Pace: `{swim['Pace']}`)")
                         with sw_col2:
                             if st.button("❌", key=f"del_sw_hist_{idx}"):
                                 st.session_state.swim_history.pop(idx)
