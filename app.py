@@ -52,7 +52,6 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # Konstanten und Zeit-Navigator ganz nach oben, um NameErrors zu verhindern
     berlin_tz = zoneinfo.ZoneInfo("Europe/Berlin")
     heute_datum = datetime.datetime.now(berlin_tz).date()
     tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
@@ -63,7 +62,7 @@ if check_password():
     selected_date_str = st.session_state.selected_date.isoformat()
     selected_weekday = tage_de[st.session_state.selected_date.weekday()]
 
-    # STABILES & ADVANCED GARMIN DATA-FETCHING (Laufen, Radfahren, Schwimmen)
+    # STABILES & ADVANCED GARMIN DATA-FETCHING
     @st.cache_data(ttl=300)
     def fetch_garmin_data(date_str):
         try:
@@ -75,7 +74,6 @@ if check_password():
             sleep_data = client.get_sleep_data(date_str)
             activities = client.get_activities(0, 8)
             
-            # --- ERWEITERTE PERFORMANCE-DATEN ---
             vo2_max, recovery_time, race_5k, training_status = "--", "--", "--", "--"
             try:
                 t_status = client.get_training_status(date_str)
@@ -252,7 +250,6 @@ if check_password():
         "fat": int(w_aktuell * 0.78)
     }
 
-    # Spezifische Mahlzeiten für das gewählte Datum laden
     heutige_mahlzeiten_liste = st.session_state.meals_log.get(selected_date_str, [])
 
     verzehrt_kcal = sum(m.get("kcal", 0) for m in heutige_mahlzeiten_liste)
@@ -275,10 +272,10 @@ if check_password():
     rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
     rem_f = max(tagesbedarf["fat"] - verzehrt_fat, 0)
 
-    # REZEPTKATALOG
+    # REZEPT-DATENBANK
     recipe_book = {
         "Frühstück 🥞": {
-            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
+            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren."},
             "Herzhaftes Rührei-Strammer-Max": {"kcal": 600, "protein": 55, "carbs": 40, "fat": 22, "zutaten": ["3 Eier", "100g Eiklar", "2 Scheiben Roggenbrot"], "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot servieren."}
         },
         "Fleischgerichte 🍗": {
@@ -297,15 +294,7 @@ if check_password():
         }
     }
 
-    alle_uebungen = [
-        "Bankdrücken", "Klimmzüge", "Dips", "Langhantelrudern", "Face Pulls", "Bulgarian Split Squats", "Trap-Bar Kreuzheben", 
-        "Box Jumps", "Lateral Lunges", "Nordic Hamstring Curls", "Schrägbankdrücken KH", "Kabelrudern eng", "Seitheben", 
-        "Incline Curls", "Trizepsdrücken", "Power Cleans", "Medizinball-Würfe", "Romanian Deadlifts", "Ab-Wheel Rollouts", "Pallof Press"
-    ]
-    if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
-    if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
-
-    # THE WORKOUT ENGINE
+    # ENGINE FÜR DIE INSIDE-TAB TRACKING FUNKTIONEN
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -314,24 +303,27 @@ if check_password():
         if st.session_state.current_workout_logs[ue_name]:
             for idx, sa in enumerate(st.session_state.current_workout_logs[ue_name]):
                 s_col1, s_col2 = st.columns([5, 1])
-                s_col1.markdown(f"`Satz {idx+1}:` **{sa}**")
-                if s_col2.button("❌", key=f"del_set_{ue_name}_{idx}"):
-                    st.session_state.current_workout_logs[ue_name].pop(idx)
-                    st.rerun()
+                with s_col1: st.markdown(f"`Satz {idx+1}:` **{sa}**")
+                with s_col2:
+                    if st.button("❌", key=f"del_set_{ue_name}_{idx}"):
+                        st.session_state.current_workout_logs[ue_name].pop(idx)
+                        st.rerun()
 
         se_col1, se_col2 = st.columns(2)
-        weight_input = se_col1.number_input("Gewicht (kg):", value=float(default_w), step=2.5, key=f"w_in_{ue_name}")
-        reps_input = se_col2.number_input("Wiederholungen:", value=int(default_r), step=1, key=f"r_in_{ue_name}")
+        with se_col1: weight_input = st.number_input("Gewicht (kg):", value=float(default_w), step=2.5, key=f"w_in_{ue_name}")
+        with se_col2: reps_input = st.number_input("Wiederholungen:", value=int(default_r), step=1, key=f"r_in_{ue_name}")
         
         b_col1, b_col2 = st.columns(2)
-        if b_col1.button("Satz loggen ➕", key=f"btn_add_{ue_name}"):
-            st.session_state.current_workout_logs[ue_name].append(f"{weight_input} kg x {reps_input} Wdh.")
-            st.rerun()
-        if st.session_state.current_workout_logs[ue_name] and b_col2.button("Sichern 💾", key=f"btn_save_{ue_name}"):
-            zusammenfassung = ", ".join(st.session_state.current_workout_logs[ue_name])
-            st.session_state.kraft_history[ue_name].append({"Datum": st.session_state.selected_date.strftime("%d.%m."), "Leistung": zusammenfassung})
-            st.session_state.current_workout_logs[ue_name] = [] 
-            st.rerun()
+        with b_col1:
+            if st.button("Satz loggen ➕", key=f"btn_add_{ue_name}"):
+                st.session_state.current_workout_logs[ue_name].append(f"{weight_input} kg x {reps_input} Wdh.")
+                st.rerun()
+        with b_col2:
+            if st.session_state.current_workout_logs[ue_name] and st.button("Sichern 💾", key=f"btn_save_{ue_name}"):
+                zusammenfassung = ", ".join(st.session_state.current_workout_logs[ue_name])
+                st.session_state.kraft_history[ue_name].append({"Datum": st.session_state.selected_date.strftime("%d.%m."), "Leistung": zusammenfassung})
+                st.session_state.current_workout_logs[ue_name] = [] 
+                st.rerun()
 
         with st.expander("📈 Ergebnisse / Historie"):
             st.dataframe(pd.DataFrame(st.session_state.kraft_history[ue_name]), hide_index=True, use_container_width=True)
@@ -342,27 +334,27 @@ if check_password():
     st.write("")
     nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
     
-    if st.session_state.selected_date > heute_datum - datetime.timedelta(days=7):
-        if nav_col1.button("◀ Vorheriger Tag", use_container_width=True):
-            st.session_state.selected_date -= datetime.timedelta(days=1)
-            st.rerun()
+    with nav_col1:
+        if st.session_state.selected_date > heute_datum - datetime.timedelta(days=7):
+            if st.button("◀ Vorheriger Tag", use_container_width=True):
+                st.session_state.selected_date -= datetime.timedelta(days=1)
+                st.rerun()
             
     formatted_date_view = st.session_state.selected_date.strftime("%d.%m.%Y")
-    if st.session_state.selected_date == heute_datum:
-        display_label = f"Heute ({formatted_date_view})"
-    elif st.session_state.selected_date == heute_datum - datetime.timedelta(days=1):
-        display_label = f"Gestern ({formatted_date_view})"
-    elif st.session_state.selected_date == heute_datum + datetime.timedelta(days=1):
-        display_label = f"Morgen ({formatted_date_view})"
-    else:
-        display_label = f"{selected_weekday}, {formatted_date_view}"
+    if st.session_state.selected_date == heute_datum: display_label = f"Heute ({formatted_date_view})"
+    elif st.session_state.selected_date == heute_datum - datetime.timedelta(days=1): display_label = f"Gestern ({formatted_date_view})"
+    elif st.session_state.selected_date == heute_datum + datetime.timedelta(days=1): display_label = f"Morgen ({formatted_date_view})"
+    else: display_label = f"{selected_weekday}, {formatted_date_view}"
         
-    nav_col2.markdown(f"<h2 style='text-align: center; color: #00f0ff; margin-top: -10px; font-weight: 900;'>{display_label}</h2>", unsafe_allowed_html=True)
+    # KORREKTUR: Mit "with" Block ausgeführt -> Schützt vor dem Python 3.14 Decorator Bug!
+    with nav_col2:
+        st.markdown(f"<h2 style='text-align: center; color: #00f0ff; margin-top: -10px; font-weight: 900;'>{display_label}</h2>", unsafe_allowed_html=True)
     
-    if st.session_state.selected_date < heute_datum + datetime.timedelta(days=7):
-        if nav_col3.button("Nächster Tag ▶", use_container_width=True):
-            st.session_state.selected_date += datetime.timedelta(days=1)
-            st.rerun()
+    with nav_col3:
+        if st.session_state.selected_date < heute_datum + datetime.timedelta(days=7):
+            if st.button("Nächster Tag ▶", use_container_width=True):
+                st.session_state.selected_date += datetime.timedelta(days=1)
+                st.rerun()
             
     st.write("---")
 
@@ -379,8 +371,8 @@ if check_password():
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
         nu_col1, nu_col2 = st.columns(2)
-        nu_col1.metric("Carbs Rest", f"{rem_c}g")
-        nu_col2.metric("Fat Rest", f"{rem_f}g")
+        with nu_col1: st.metric("Carbs Rest", f"{rem_c}g")
+        with nu_col2: st.metric("Fat Rest", f"{rem_f}g")
         
         st.write("---")
         st.session_state.prozis_weight = st.number_input("⚖️ Morgengewicht (kg):", value=float(st.session_state.prozis_weight), step=0.1)
@@ -420,13 +412,14 @@ if check_password():
                     st.markdown(f"**{tag}**")
                     for m_idx, meal in enumerate(m_liste):
                         w_col1, w_col2 = st.columns([5, 1])
-                        checked = w_col1.checkbox(meal["label"], value=meal["done"], key=f"chk_{tag}_{m_idx}")
+                        with w_col1: checked = st.checkbox(meal["label"], value=meal["done"], key=f"chk_{tag}_{m_idx}")
                         if checked != meal["done"]:
                             st.session_state.ki_wochenplan[tag][m_idx]["done"] = checked
                             st.rerun()
-                        if w_col2.button("🗑️", key=f"del_wp_{tag}_{m_idx}"):
-                            st.session_state.ki_wochenplan[tag].pop(m_idx)
-                            st.rerun()
+                        with w_col2:
+                            if st.button("🗑️", key=f"del_wp_{tag}_{m_idx}"):
+                                st.session_state.ki_wochenplan[tag].pop(m_idx)
+                                st.rerun()
 
         with st.expander("📸 Neuen Mahlzeit-Scanner"):
             uploaded_file = st.file_uploader("Foto hochladen...", type=["jpg", "png", "jpeg"])
@@ -435,14 +428,15 @@ if check_password():
             if heutige_mahlzeiten_liste:
                 for idx, meal in enumerate(heutige_mahlzeiten_liste):
                     m_col1, m_col2 = st.columns([5, 1])
-                    m_col1.caption(f"✔️ {meal['name']} ({meal['kcal']} kcal)")
-                    if m_col2.button("❌", key=f"del_meal_{idx}"):
-                        st.session_state.meals_log[selected_date_str].pop(idx)
-                        st.rerun()
+                    with m_col1: st.caption(f"✔️ {meal['name']} ({meal['kcal']} kcal)")
+                    with m_col2:
+                        if st.button("❌", key=f"del_meal_{idx}"):
+                            st.session_state.meals_log[selected_date_str].pop(idx)
+                            st.rerun()
             else: st.caption("Noch keine Mahlzeiten an diesem Tag geloggt.")
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN & PRO CARDIO ENGINE
+    # SPALTE 2: TRAININGSPLAN, CARDIO & SWIM
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -524,9 +518,9 @@ if check_password():
             ])
             
             c_col1, c_col2, c_col3 = st.columns(3)
-            c_dist = c_col1.number_input("Distanz (km):", value=5.0, step=0.1, key="c_dist_all")
-            c_min = c_col2.number_input("Zeit: Minuten:", value=25, step=1, key="c_min_all")
-            c_sec = c_col3.number_input("Zeit: Sekunden:", value=0, step=1, max_value=59, key="c_sec_all")
+            with c_col1: c_dist = st.number_input("Distanz (km):", value=5.0, step=0.1, key="c_dist_all")
+            with c_col2: c_min = st.number_input("Zeit: Minuten:", value=25, step=1, key="c_min_all")
+            with c_col3: c_sec = st.number_input("Zeit: Sekunden:", value=0, step=1, max_value=59, key="c_sec_all")
             
             total_man_minutes = c_min + (c_sec / 60)
             if c_dist > 0 and total_man_minutes > 0:
@@ -537,8 +531,8 @@ if check_password():
                 man_pace_str = f"{man_p_m}:{man_p_s:02d} min/km"
                 
                 m_calc1, m_calc2 = st.columns(2)
-                m_calc1.metric("Berechnete Pace", man_pace_str)
-                m_calc2.metric("Geschwindigkeit", f"{man_speed} km/h")
+                with m_calc1: st.metric("Berechnete Pace", man_pace_str)
+                with m_calc2: st.metric("Geschwindigkeit", f"{man_speed} km/h")
             else: man_pace_str, man_speed = "--", 0
                 
             if st.button("Einheit in Historie eintragen 🏃‍♂️", key="log_cardio_all"):
@@ -552,10 +546,11 @@ if check_password():
                 if st.session_state.cardio_history:
                     for idx, run in enumerate(st.session_state.cardio_history):
                         r_col1, r_col2 = st.columns([5, 1])
-                        r_col1.markdown(f"`{run['Datum']}` **{run['Typ']}**: {run['Distanz']} in {run['Dauer']} ({run['Pace']} | {run['Speed']})")
-                        if r_col2.button("❌", key=f"del_c_hist_{idx}"):
-                            st.session_state.cardio_history.pop(idx)
-                            st.rerun()
+                        with r_col1: r_col1.markdown(f"`{run['Datum']}` **{run['Typ']}**: {run['Distanz']} in {run['Dauer']} ({run['Pace']} | {run['Speed']})")
+                        with r_col2:
+                            if st.button("❌", key=f"del_c_hist_{idx}"):
+                                st.session_state.cardio_history.pop(idx)
+                                st.rerun()
                 else: st.caption("Noch keine Einheiten manuell geloggt.")
                 
             st.write("---")
@@ -578,9 +573,9 @@ if check_password():
             st.markdown("**Manuelle Schwimmeinheit eintragen:**")
             
             sw_col1, sw_col2, sw_col3 = st.columns(3)
-            sw_dist = sw_col1.number_input("Distanz (Meter):", value=1500, step=50, key="sw_dist_in")
-            sw_min = sw_col2.number_input("Minuten:", value=30, step=1, key="sw_min_in")
-            sw_sec = sw_col3.number_input("Sekunden:", value=0, step=1, max_value=59, key="sw_sec_in")
+            with sw_col1: sw_dist = st.number_input("Distanz (Meter):", value=1500, step=50, key="sw_dist_in")
+            with sw_col2: sw_min = st.number_input("Minuten:", value=30, step=1, key="sw_min_in")
+            with sw_col3: sw_sec = st.number_input("Sekunden:", value=0, step=1, max_value=59, key="sw_sec_in")
             
             total_swim_sec = (sw_min * 60) + sw_sec
             if sw_dist > 0 and total_swim_sec > 0:
@@ -602,10 +597,11 @@ if check_password():
                 if st.session_state.swim_history:
                     for idx, swim in enumerate(st.session_state.swim_history):
                         sw_c1, sw_col2 = st.columns([5, 1])
-                        sw_c1.markdown(f"`{swim['Datum']}` **Schwimmen**: {swim['Distanz']} in {swim['Dauer']} (Ø-Pace: `{swim['Pace']}`)")
-                        if sw_col2.button("❌", key=f"del_sw_hist_{idx}"):
-                            st.session_state.swim_history.pop(idx)
-                            st.rerun()
+                        with sw_c1: sw_c1.markdown(f"`{swim['Datum']}` **Schwimmen**: {swim['Distanz']} in {swim['Dauer']} (Ø-Pace: `{swim['Pace']}`)")
+                        with sw_col2:
+                            if st.button("❌", key=f"del_sw_hist_{idx}"):
+                                st.session_state.swim_history.pop(idx)
+                                st.rerun()
                 else: st.caption("Noch keine manuellen Schwimmeinheiten eingetragen.")
 
     # ==========================================
