@@ -44,7 +44,7 @@ def check_password():
 if check_password():
     
     # ==========================================
-    # API INITIALISIERUNG
+    # API INITIALISIERUNG & BASIS-DATEN
     # ==========================================
     GARMIN_EMAIL = st.secrets["GARMIN_EMAIL"]
     GARMIN_PASSWORD = st.secrets["GARMIN_PASSWORD"]
@@ -52,30 +52,30 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # ZEITZONEN & DATUMS-NAVIGATOR SETUP
+    # Konstanten und Zeit-Navigator ganz nach oben, um NameErrors zu verhindern
     berlin_tz = zoneinfo.ZoneInfo("Europe/Berlin")
     heute_datum = datetime.datetime.now(berlin_tz).date()
+    tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = heute_datum
 
-    # ISO-String für Dict-Keys und Garmin-Schnittstelle generieren
     selected_date_str = st.session_state.selected_date.isoformat()
+    selected_weekday = tage_de[st.session_state.selected_date.weekday()]
 
-    # DYNAMISCHER GARMIN DATENABRUF FÜR DAS AUSGEWÄHLTE DATUM
+    # STABILES & ADVANCED GARMIN DATA-FETCHING (Laufen, Radfahren, Schwimmen)
     @st.cache_data(ttl=300)
     def fetch_garmin_data(date_str):
         try:
             client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
             client.login()
             
-            # Holt die Daten exakt für den ausgewählten Tag!
             stats = client.get_stats(date_str)
             heart_rates = client.get_heart_rates(date_str)
             sleep_data = client.get_sleep_data(date_str)
-            activities = client.get_activities(0, 8) 
+            activities = client.get_activities(0, 8)
             
-            # --- PERFORMANCE-DATEN ---
+            # --- ERWEITERTE PERFORMANCE-DATEN ---
             vo2_max, recovery_time, race_5k, training_status = "--", "--", "--", "--"
             try:
                 t_status = client.get_training_status(date_str)
@@ -230,10 +230,10 @@ if check_password():
     step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
 
     # ==========================================
-    # JETZT NEU: TAGGENAUES ERNÄHRUNGSPROTOKOLL (DICT-STRUKTUR)
+    # INITIALISIERUNGEN (SESSION STATE)
     # ==========================================
     if "meals_log" not in st.session_state or isinstance(st.session_state.meals_log, list):
-        st.session_state.meals_log = {} # Wandelt alten Stand fehlerfrei in tägliche Kacheln um
+        st.session_state.meals_log = {}
 
     if "favorites" not in st.session_state: st.session_state.favorites = {"--- Bitte wählen ---": None}
     if "ki_wochenplan" not in st.session_state:
@@ -243,10 +243,7 @@ if check_password():
     if "cardio_history" not in st.session_state: st.session_state.cardio_history = []
     if "swim_history" not in st.session_state: st.session_state.swim_history = []
 
-    # Wochentag des aktuell *ausgewählten* Datums ermitteln
-    selected_weekday = tage_de[st.session_state.selected_date.weekday()]
-
-    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM GEWICHT
+    # DYNAMISCHE MAKROBERECHNUNG
     w_aktuell = st.session_state.prozis_weight
     tagesbedarf = {
         "kcal": int(w_aktuell * 25.5),      
@@ -255,7 +252,7 @@ if check_password():
         "fat": int(w_aktuell * 0.78)
     }
 
-    # Nur die Mahlzeiten für das spezifisch ausgewählte Datum laden
+    # Spezifische Mahlzeiten für das gewählte Datum laden
     heutige_mahlzeiten_liste = st.session_state.meals_log.get(selected_date_str, [])
 
     verzehrt_kcal = sum(m.get("kcal", 0) for m in heutige_mahlzeiten_liste)
@@ -263,7 +260,6 @@ if check_password():
     verzehrt_carbs = sum(m.get("carbs", 0) for m in heutige_mahlzeiten_liste)
     verzehrt_fat = sum(m.get("fat", 0) for m in heutige_mahlzeiten_liste)
 
-    # Abgehakte Wochenplan-Gerichte für diesen spezifischen Wochentag mitverrechnen
     for wp_meal in st.session_state.ki_wochenplan.get(selected_weekday, []):
         if wp_meal.get("done"):
             verzehrt_kcal += wp_meal.get("kcal", 0)
@@ -271,7 +267,6 @@ if check_password():
             verzehrt_carbs += wp_meal.get("carbs", 0)
             verzehrt_fat += wp_meal.get("fat", 0)
 
-    # Garmin Aktiv-Kalorien-Bonus für das ausgewählte Datum dazurechnen
     kcal_bonus = g_data.get("active_cal", 0)
     dynamisches_kcal_ziel = tagesbedarf["kcal"] + kcal_bonus
 
@@ -280,10 +275,10 @@ if check_password():
     rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
     rem_f = max(tagesbedarf["fat"] - verzehrt_fat, 0)
 
-    # REZEPT-DATENBANK
+    # REZEPTKATALOG
     recipe_book = {
         "Frühstück 🥞": {
-            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren."},
+            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
             "Herzhaftes Rührei-Strammer-Max": {"kcal": 600, "protein": 55, "carbs": 40, "fat": 22, "zutaten": ["3 Eier", "100g Eiklar", "2 Scheiben Roggenbrot"], "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot servieren."}
         },
         "Fleischgerichte 🍗": {
@@ -310,7 +305,7 @@ if check_password():
     if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
     if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # WORKOUT MECHANIK
+    # THE WORKOUT ENGINE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -342,18 +337,16 @@ if check_password():
             st.dataframe(pd.DataFrame(st.session_state.kraft_history[ue_name]), hide_index=True, use_container_width=True)
 
     # ==========================================
-    # NEU: DIE ZEITREISEN-NAVIGATION GANZ OBEN (OLED BRANDING)
+    # TIME-TRAVEL NAVIGATION BAR GANZ OBEN
     # ==========================================
     st.write("")
     nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
     
-    # 7 Tage Limit zurück
     if st.session_state.selected_date > heute_datum - datetime.timedelta(days=7):
         if nav_col1.button("◀ Vorheriger Tag", use_container_width=True):
             st.session_state.selected_date -= datetime.timedelta(days=1)
             st.rerun()
             
-    # Hübsches, dynamisches Label erzeugen
     formatted_date_view = st.session_state.selected_date.strftime("%d.%m.%Y")
     if st.session_state.selected_date == heute_datum:
         display_label = f"Heute ({formatted_date_view})"
@@ -366,7 +359,6 @@ if check_password():
         
     nav_col2.markdown(f"<h2 style='text-align: center; color: #00f0ff; margin-top: -10px; font-weight: 900;'>{display_label}</h2>", unsafe_allowed_html=True)
     
-    # 7 Tage Limit nach vorne
     if st.session_state.selected_date < heute_datum + datetime.timedelta(days=7):
         if nav_col3.button("Nächster Tag ▶", use_container_width=True):
             st.session_state.selected_date += datetime.timedelta(days=1)
@@ -374,7 +366,7 @@ if check_password():
             
     st.write("---")
 
-    # DREI-SPALTEN-LAYOUT START
+    # DREI-SPALTEN LAYOUT GENERIEREN
     col1, col2, col3 = st.columns([1.1, 1.5, 1], gap="large")
 
     # ==========================================
@@ -450,7 +442,7 @@ if check_password():
             else: st.caption("Noch keine Mahlzeiten an diesem Tag geloggt.")
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN, CARDIO & SWIM
+    # SPALTE 2: TRAININGSPLAN & PRO CARDIO ENGINE
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -617,7 +609,7 @@ if check_password():
                 else: st.caption("Noch keine manuellen Schwimmeinheiten eingetragen.")
 
     # ==========================================
-    # SPALTE 3: GARMIN VITAL-HUB (RECHTS)
+    # SPALTE 3: GARMIN VITAL-HUB
     # ==========================================
     with col3:
         st.header("📊 Garmin Hub")
