@@ -65,9 +65,9 @@ if check_password():
             stats = client.get_stats(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
-            activities = client.get_activities(0, 8) # Erhöht auf 8 Aktivitäten
+            activities = client.get_activities(0, 8)
             
-            # --- ERWEITERTE LEISTUNSDATEN ---
+            # --- ERWEITERTE PERFORMANCE-DATEN ---
             vo2_max, recovery_time, race_5k, training_status = "--", "--", "--", "--"
             try:
                 t_status = client.get_training_status(today)
@@ -123,12 +123,11 @@ if check_password():
                     
                     # 2. LIVE SYNC FÜR DEINE SCHWIMMEINHEITEN
                     if w_type in ['swimming', 'lap_swimming']:
-                        s_dist = round(act.get('distance', 0)) # Meistens direkt in Metern geliefert
-                        if s_dist > 10000: s_dist = round(s_dist / 100) # Sicherheits-Korrektur falls cm
+                        s_dist = round(act.get('distance', 0))
+                        if s_dist > 10000: s_dist = round(s_dist / 100)
                         s_dur_sec = act.get('duration', 0)
                         s_dur_min = round(s_dur_sec / 60, 1)
                         if s_dist > 0:
-                            # Schwimm-Pace berechnet sich pro 100m
                             pace_100m_dec = (s_dur_sec / 60) / (s_dist / 100)
                             sm = int(pace_100m_dec)
                             ss = int((pace_100m_dec - sm) * 60)
@@ -143,7 +142,7 @@ if check_password():
                             "Pace": swim_pace_str
                         })
 
-                    # Krafttraining Sätze extrahieren...
+                    # Krafttraining Sätze
                     if w_type == 'strength_training' and act_date == today:
                         act_id = act.get('activityId')
                         try:
@@ -235,20 +234,28 @@ if check_password():
     step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
 
     # ==========================================
-    # INITIALISIERUNGEN (SESSION STATE)
+    # INITIALISIERUNGEN & SPEICHER (SESSION STATE)
     # ==========================================
     if "meals_log" not in st.session_state: st.session_state.meals_log = []
+    else: st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
+
     if "favorites" not in st.session_state: st.session_state.favorites = {"--- Bitte wählen ---": None}
     if "ki_wochenplan" not in st.session_state:
         st.session_state.ki_wochenplan = {"Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], "Freitag": [], "Samstag": [], "Sonntag": []}
         
     if "prozis_weight" not in st.session_state: st.session_state.prozis_weight = 102.0
     if "cardio_history" not in st.session_state: st.session_state.cardio_history = []
-    if "swim_history" not in st.session_state: st.session_state.swim_history = [] # Neuer separater Schwimm-Speicher
+    if "swim_history" not in st.session_state: st.session_state.swim_history = []
 
+    # FIX: Der aktuelle Wochentag MUSS hier oben definiert sein, BEVOR die Verrechnung startet!
+    berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
+    tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+    heute_wochentag = tage_de[berlin_time.weekday()]
+
+    # REZEPT-DATENBANK
     recipe_book = {
         "Frühstück 🥞": {
-            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren."},
+            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
             "Herzhaftes Rührei-Strammer-Max": {"kcal": 600, "protein": 55, "carbs": 40, "fat": 22, "zutaten": ["3 Eier", "100g Eiklar", "2 Scheiben Roggenbrot"], "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot servieren."}
         },
         "Fleischgerichte 🍗": {
@@ -267,7 +274,7 @@ if check_password():
         }
     }
 
-    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM MORGENGEWICHT-FELD
+    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM MORGENGEWICHT
     w_aktuell = st.session_state.prozis_weight
     tagesbedarf = {
         "kcal": int(w_aktuell * 25.5),      
@@ -276,6 +283,7 @@ if check_password():
         "fat": int(w_aktuell * 0.78)
     }
 
+    # Verrechnung der Makros
     verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
     verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
     verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
@@ -301,7 +309,7 @@ if check_password():
     if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
     if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # WORKOUT ENGINE
+    # THE WORKOUT ENGINE (MANUELL)
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -337,7 +345,7 @@ if check_password():
     col1, col2, col3 = st.columns([1.1, 1.5, 1], gap="large")
 
     # ==========================================
-    # SPALTE 1: ERNÄHRUNG & ORGA (LINKS)
+    # SPALTE 1: ERNÄHRUNG & ORGA
     # ==========================================
     with col1:
         st.header("🍽️ Ernährung & Orga")
@@ -401,7 +409,7 @@ if check_password():
                         st.rerun()
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN & PRO LAUF/SCHWIMM ENGINE (MITTE)
+    # SPALTE 2: TRAININGSPLAN, CARDIO & SWIM ENGINE
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -409,7 +417,6 @@ if check_password():
             with st.expander("⌚ Live von deiner Garmin-Uhr erfasst (Heute)", expanded=True):
                 for rs in g_data["raw_strength_sets"]: st.write(rs)
         
-        # JETZT NEU MIT SECHSTEM REITER FÜR SCHWIMMEN
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer / Rad", "T6: Schwimmen 🏊‍♂️"])
         
         with tab1:
@@ -513,13 +520,13 @@ if check_password():
                 })
                 st.rerun()
                 
-            # KORREKTUR: Jetzt mit voll funktionsfähigem Lösch-X für jeden Listeneintrag!
-            with st.expander("📈 Ergebnisse / Alle vergangenen Einheiten"):
+            # FIX: Jetzt mit funktionierender Zeilen-Löschung!
+            with st.expander("📈 Ergebnisse / Alle vergangenen Einheiten", expanded=True):
                 if st.session_state.cardio_history:
                     for idx, run in enumerate(st.session_state.cardio_history):
                         r_col1, r_col2 = st.columns([5, 1])
                         r_col1.markdown(f"`{run['Datum']}` **{run['Typ']}**: {run['Distanz']} in {run['Dauer']} ({run['Pace']} | {run['Speed']})")
-                        if r_col2.button("❌", key=f"del_c_hist_{idx}", help="Eintrag löschen"):
+                        if r_col2.button("❌", key=f"del_c_hist_{idx}"):
                             st.session_state.cardio_history.pop(idx)
                             st.rerun()
                 else: st.caption("Noch keine Einheiten manuell geloggt.")
@@ -551,7 +558,6 @@ if check_password():
             sw_min = sw_col2.number_input("Minuten:", value=30, step=1, key="sw_min_in")
             sw_sec = sw_col3.number_input("Sekunden:", value=0, step=1, max_value=59, key="sw_sec_in")
             
-            # SPEZIFISCHER SCHWIMM-RECHNER (Pace pro 100 Meter!)
             total_swim_sec = (sw_min * 60) + sw_sec
             if sw_dist > 0 and total_swim_sec > 0:
                 swim_pace_dec = (total_swim_sec / 60) / (sw_dist / 100)
@@ -565,15 +571,13 @@ if check_password():
             if st.button("Schwimmen in Historie loggen 💾", key="log_swim_btn"):
                 h_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
                 st.session_state.swim_history.append({
-                    "Datum": h_datum,
-                    "Distanz": f"{sw_dist} m",
-                    "Dauer": f"{sw_min}:{sw_sec:02d} Min",
-                    "Pace": swim_pace_str
+                    "Datum": h_datum, "Distanz": f"{sw_dist} m",
+                    "Dauer": f"{sw_min}:{sw_sec:02d} Min", "Pace": swim_pace_str
                 })
                 st.rerun()
                 
-            # Schwimm-Historie inklusive Lösch-X
-            with st.expander("📈 Ergebnisse / Alle vergangenen Schwimmtrainings"):
+            # FIX: Jetzt mit funktionierender Zeilen-Löschung!
+            with st.expander("📈 Ergebnisse / Alle vergangenen Schwimmtrainings", expanded=True):
                 if st.session_state.swim_history:
                     for idx, swim in enumerate(st.session_state.swim_history):
                         sw_c1, sw_col2 = st.columns([5, 1])
