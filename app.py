@@ -52,7 +52,7 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # STABILES & ERWEITERTES GARMIN DATA-FETCHING
+    # STABILES & ADVANCED GARMIN DATA-FETCHING (Laufen, Radfahren, Schwimmen)
     @st.cache_data(ttl=300)
     def fetch_garmin_data():
         try:
@@ -62,49 +62,43 @@ if check_password():
             berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
             today = berlin_time.date().isoformat()
             
-            # Die stabilsten Haupt-Endpunkte abrufen
             stats = client.get_stats(today)
             heart_rates = client.get_heart_rates(today)
             sleep_data = client.get_sleep_data(today)
-            activities = client.get_activities(0, 5)
+            activities = client.get_activities(0, 8) # Erhöht auf 8 Aktivitäten
             
-            # --- ERWEITERTE PERFORMANCE- & GESUNDHEITSDATEN ---
-            vo2_max = "--"
-            recovery_time = "--"
-            race_5k = "--"
-            training_status = "--"
+            # --- ERWEITERTE LEISTUNSDATEN ---
+            vo2_max, recovery_time, race_5k, training_status = "--", "--", "--", "--"
             try:
                 t_status = client.get_training_status(today)
                 if t_status:
                     vo2_max_raw = t_status.get("mostRecentRunVo2Max", {}).get("genericValue") or t_status.get("vo2Max")
                     vo2_max = f"{round(vo2_max_raw, 1)}" if vo2_max_raw else "--"
-                    
                     rec_hours = t_status.get("recoveryTimeInHours") or t_status.get("recoveryTime")
                     recovery_time = f"{rec_hours} Std" if rec_hours else "--"
-                    
                     training_status = t_status.get("trainingStatusDTO", {}).get("trainingStatus") or t_status.get("trainingStatus", "--")
-                    
                     preds = t_status.get("racePredictions", {}) or t_status.get("racePredictionDTO", {})
-                    if preds:
-                        race_5k = preds.get("fiveK", {}).get("displayTime") or preds.get("fiveKTime", "--")
+                    if preds: race_5k = preds.get("fiveK", {}).get("displayTime") or preds.get("fiveKTime", "--")
             except: pass
 
             workout_list = []
             garmin_strength_today = {}
             raw_strength_sets = []
-            garmin_runs_history = []
+            garmin_cardio_history = []
+            garmin_swim_history = []
             
             if activities:
                 for act in activities:
-                    w_type = act.get('activityType', {}).get('typeKey', 'Workout')
+                    w_type = act.get('activityType', {}).get('typeKey', 'Workout').lower()
                     w_dur = round(act.get('duration', 0) / 60)
                     w_cal = round(act.get('calories', 0))
-                    workout_list.append(f"💪 {w_type}: {w_dur} Min ({w_cal} kcal)")
+                    workout_list.append(f"💪 {w_type.upper()}: {w_dur} Min ({w_cal} kcal)")
                     
                     act_date = act.get('startTimeLocal', '')[:10]
+                    formatted_date = act_date[8:10] + "." + act_date[5:7] + "."
                     
-                    # NEU: LIVE SYNC FÜR DEINE LAUFEINHEITEN
-                    if w_type in ['running', 'run', 'trail_running']:
+                    # 1. LIVE SYNC FÜR DEINE LAUF- & FAHRRADEINHEITEN
+                    if w_type in ['running', 'run', 'trail_running', 'cycling', 'biking']:
                         r_dist = round(act.get('distance', 0) / 1000, 2)
                         r_dur_sec = act.get('duration', 0)
                         r_dur_min = round(r_dur_sec / 60, 1)
@@ -116,29 +110,50 @@ if check_password():
                             pace_str = f"{p_m}:{p_s:02d} min/km"
                             speed_kmh = round(r_dist / (total_min / 60), 1)
                         else:
-                            pace_str = "--"
-                            speed_kmh = 0
-                        garmin_runs_history.append({
-                            "Datum": act_date[8:10] + "." + act_date[5:7] + ".",
-                            "Typ": act.get('activityName', 'Lauf'),
+                            pace_str, speed_kmh = "--", 0
+                            
+                        garmin_cardio_history.append({
+                            "Datum": formatted_date,
+                            "Typ": "Fahrrad" if "cycl" in w_type or "bik" in w_type else "Lauf",
                             "Distanz": f"{r_dist} km",
                             "Dauer": f"{r_dur_min} Min",
                             "Pace": pace_str,
                             "Speed": f"{speed_kmh} km/h"
                         })
                     
+                    # 2. LIVE SYNC FÜR DEINE SCHWIMMEINHEITEN
+                    if w_type in ['swimming', 'lap_swimming']:
+                        s_dist = round(act.get('distance', 0)) # Meistens direkt in Metern geliefert
+                        if s_dist > 10000: s_dist = round(s_dist / 100) # Sicherheits-Korrektur falls cm
+                        s_dur_sec = act.get('duration', 0)
+                        s_dur_min = round(s_dur_sec / 60, 1)
+                        if s_dist > 0:
+                            # Schwimm-Pace berechnet sich pro 100m
+                            pace_100m_dec = (s_dur_sec / 60) / (s_dist / 100)
+                            sm = int(pace_100m_dec)
+                            ss = int((pace_100m_dec - sm) * 60)
+                            swim_pace_str = f"{sm}:{ss:02d} min/100m"
+                        else:
+                            swim_pace_str = "--"
+                            
+                        garmin_swim_history.append({
+                            "Datum": formatted_date,
+                            "Distanz": f"{s_dist} m",
+                            "Dauer": f"{s_dur_min} Min",
+                            "Pace": swim_pace_str
+                        })
+
+                    # Krafttraining Sätze extrahieren...
                     if w_type == 'strength_training' and act_date == today:
                         act_id = act.get('activityId')
                         try:
                             details = client.get_activity_details(act_id)
                             sets = details.get('sets', []) or details.get('summaryDTO', {}).get('sets', [])
-                            
                             for idx, s in enumerate(sets):
                                 reps = s.get('reps', 0)
                                 weight = s.get('weight', 0)
                                 if weight > 1000: weight = round(weight / 1000, 1)
                                 else: weight = round(weight, 1)
-                                    
                                 if reps > 0:
                                     ex_name = s.get('exerciseName', 'Unbekannte Übung').lower()
                                     set_str = f"{weight} kg x {reps} Wdh."
@@ -179,7 +194,6 @@ if check_password():
             total_cal = round(stats.get("totalCalories", active_cal + bmr_cal))
             distance_km = round(stats.get("distanceInMeters", 0) / 1000, 2)
             floors = stats.get("floorsClimbed", 0)
-            
             stress_avg = stats.get("averageStressLevel", "--")
             if stress_avg == -1 or stress_avg == 0: stress_avg = "--"
 
@@ -189,7 +203,8 @@ if check_password():
                 "workout_list": workout_list,
                 "garmin_strength_today": garmin_strength_today,
                 "raw_strength_sets": raw_strength_sets,
-                "garmin_runs_history": garmin_runs_history,
+                "garmin_cardio_history": garmin_cardio_history,
+                "garmin_swim_history": garmin_swim_history,
                 "steps": steps,
                 "step_goal": step_goal,
                 "active_cal": active_cal,
@@ -209,7 +224,7 @@ if check_password():
         except:
             fallback = {
                 "rhr": "--", "max_hr": "--", "workout_list": ["Synchronisiere..."],
-                "garmin_strength_today": {}, "raw_strength_sets": [], "garmin_runs_history": [],
+                "garmin_strength_today": {}, "raw_strength_sets": [], "garmin_cardio_history": [], "garmin_swim_history": [],
                 "steps": 0, "step_goal": 10000, "active_cal": 0, "bmr_cal": 1900, "total_cal": 1900,
                 "distance_km": 0.0, "floors": 0, "sleep_duration": 0, "sleep_score": "--", "stress_avg": "--",
                 "vo2_max": "--", "recovery_time": "--", "race_5k": "--", "training_status": "--"
@@ -223,39 +238,32 @@ if check_password():
     # INITIALISIERUNGEN (SESSION STATE)
     # ==========================================
     if "meals_log" not in st.session_state: st.session_state.meals_log = []
-    else: st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
-
     if "favorites" not in st.session_state: st.session_state.favorites = {"--- Bitte wählen ---": None}
     if "ki_wochenplan" not in st.session_state:
         st.session_state.ki_wochenplan = {"Montag": [], "Dienstag": [], "Mittwoch": [], "Donnerstag": [], "Freitag": [], "Samstag": [], "Sonntag": []}
         
     if "prozis_weight" not in st.session_state: st.session_state.prozis_weight = 102.0
-    
-    # NEU: Persistenter Speicher für deine manuell eingetragenen Läufe
-    if "cardio_history" not in st.session_state:
-        st.session_state.cardio_history = []
+    if "cardio_history" not in st.session_state: st.session_state.cardio_history = []
+    if "swim_history" not in st.session_state: st.session_state.swim_history = [] # Neuer separater Schwimm-Speicher
 
-    # REZEPT-DATENBANK
     recipe_book = {
         "Frühstück 🥞": {
-            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark", "100g TK-Heidelbeeren"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren, Beeren drüber."},
-            "Herzhaftes Rührei-Strammer-Max": {"kcal": 600, "protein": 55, "carbs": 40, "fat": 22, "zutaten": ["3 ganze Eier", "100g flüssiges Eiklar", "2 Scheiben Roggenbrot", "50g Hähnchenbrust"], "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot mit Hähnchenbrust servieren."}
+            "Power-Oatmeal (High-Protein)": {"kcal": 680, "protein": 52, "carbs": 85, "fat": 13, "zutaten": ["100g Haferflocken", "40g Whey-Proteinpulver", "150g Magerquark"], "anleitung": "Haferflocken quellen lassen. Quark und Whey unterrühren."},
+            "Herzhaftes Rührei-Strammer-Max": {"kcal": 600, "protein": 55, "carbs": 40, "fat": 22, "zutaten": ["3 Eier", "100g Eiklar", "2 Scheiben Roggenbrot"], "anleitung": "Eiklar und Eier verquirlen, braten. Auf Brot servieren."}
         },
         "Fleischgerichte 🍗": {
-            "Crispy Airfryer Chicken": {"kcal": 650, "protein": 62, "carbs": 65, "fat": 12, "zutaten": ["250g Hähnchenbrust", "300g Süßkartoffel", "150g Brokkoli", "10ml Olivenöl"], "anleitung": "Hähnchen und Kartoffeln würfeln, ölen, würzen. 18 Min bei 180°C in den Airfryer."},
-            "Puten-Brokkoli-Pfanne (Asia)": {"kcal": 620, "protein": 65, "carbs": 60, "fat": 10, "zutaten": ["250g Putenbrust", "200g Brokkoli", "80g Basmatireis", "Sojasauce"], "anleitung": "Reis kochen. Pute scharf anbraten, Brokkoli und Sojasauce mitdünsten."}
+            "Crispy Airfryer Chicken": {"kcal": 650, "protein": 62, "carbs": 65, "fat": 12, "zutaten": ["250g Hähnchenbrust", "300g Süßkartoffel"], "anleitung": "Hähnchen und Kartoffeln würfeln. 18 Min bei 180°C in den Airfryer."},
+            "Puten-Brokkoli-Pfanne (Asia)": {"kcal": 620, "protein": 65, "carbs": 60, "fat": 10, "zutaten": ["250g Putenbrust", "200g Brokkoli"], "anleitung": "Reis kochen. Pute braten, Brokkoli mitdünsten."}
         },
         "Fischgerichte 🐟": {
-            "Gebackenes Lachsfilet": {"kcal": 640, "protein": 48, "carbs": 55, "fat": 22, "zutaten": ["200g Lachsfilet", "70g Quinoa", "150g grüner Spargel", "Zitrone"], "anleitung": "Quinoa kochen. Lachs mit Zitrone würzen und 15 Min bei 180°C backen."},
-            "Knoblauch-Chili-Garnelen": {"kcal": 580, "protein": 50, "carbs": 75, "fat": 8, "zutaten": ["250g Riesengarnelen", "80g Jasminreis", "Paprika", "Sesamöl"], "anleitung": "Garnelen mit Knoblauch, Chili und Gemüse im Sesamöl scharf pfannenrühren."}
+            "Gebackenes Lachsfilet": {"kcal": 640, "protein": 48, "carbs": 55, "fat": 22, "zutaten": ["200g Lachsfilet", "70g Quinoa"], "anleitung": "Quinoa kochen. Lachs 15 Min bei 180°C backen."}
         },
         "Vegetarisch 🌱": {
-            "Sojageschnetzeltes in Pilzrahm": {"kcal": 590, "protein": 53, "carbs": 58, "fat": 11, "zutaten": ["60g Sojaschnetzel", "70g Vollkornnudeln", "200g Champignons", "Leicht-Kochcreme"], "anleitung": "Schnetzel einweichen, ausdrücken, kross braten. Pilze und Creme dazu."},
-            "Protein-Bowl mit Falafel": {"kcal": 580, "protein": 44, "carbs": 65, "fat": 14, "zutaten": ["200g Hüttenkäse light", "100g Falafel", "60g Couscous", "Gemüse"], "anleitung": "Couscous quellen lassen. Mit Hüttenkäse, Gemüse und Falafel anrichten."}
+            "Protein-Bowl mit Falafel": {"kcal": 580, "protein": 44, "carbs": 65, "fat": 14, "zutaten": ["200g Hüttenkäse", "100g Falafel"], "anleitung": "Mit Hüttenkäse, Gemüse und Falafel anrichten."}
         },
         "Snacks 🍫": {
-            "Magerquark-Flavour-Bowl": {"kcal": 290, "protein": 42, "carbs": 16, "fat": 1, "zutaten": ["300g Magerquark", "50ml Wasser", "Flavour Drops", "50g Himbeeren"], "anleitung": "Quark mit Wasser und Drops cremig schlagen. Himbeeren unterheben."},
-            "Beef Jerky Handvoll": {"kcal": 150, "protein": 28, "carbs": 3, "fat": 2, "zutaten": ["50g Beef Jerky"], "anleitung": "Snackfertig aus der Packung für maximalen Muskelschutz nach dem Training."}
+            "Magerquark-Flavour-Bowl": {"kcal": 290, "protein": 42, "carbs": 16, "fat": 1, "zutaten": ["300g Magerquark", "Flavour Drops"], "anleitung": "Quark mit Wassertropfen cremig schlagen."},
+            "Beef Jerky Handvoll": {"kcal": 150, "protein": 28, "carbs": 3, "fat": 2, "zutaten": ["50g Beef Jerky"], "anleitung": "Snackfertig aus der Packung für unterwegs."}
         }
     }
 
@@ -268,11 +276,6 @@ if check_password():
         "fat": int(w_aktuell * 0.78)
     }
 
-    berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
-    tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
-    heute_wochentag = tage_de[berlin_time.weekday()]
-
-    # Verrechnung Makros
     verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
     verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
     verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
@@ -290,7 +293,6 @@ if check_password():
     rem_c = max(tagesbedarf["carbs"] - verzehrt_carbs, 0)
     rem_f = max(tagesbedarf["fat"] - verzehrt_fat, 0)
 
-    # ALL KRAFT ÜBUNGEN
     alle_uebungen = [
         "Bankdrücken", "Klimmzüge", "Dips", "Langhantelrudern", "Face Pulls", "Bulgarian Split Squats", "Trap-Bar Kreuzheben", 
         "Box Jumps", "Lateral Lunges", "Nordic Hamstring Curls", "Schrägbankdrücken KH", "Kabelrudern eng", "Seitheben", 
@@ -299,7 +301,7 @@ if check_password():
     if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
     if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE WORKOUT ENGINE
+    # WORKOUT ENGINE
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -339,7 +341,6 @@ if check_password():
     # ==========================================
     with col1:
         st.header("🍽️ Ernährung & Orga")
-        
         st.metric("Kcal Restbudget", f"{rem_kcal} kcal", f"Ziel: {tagesbedarf['kcal']}")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
@@ -349,7 +350,6 @@ if check_password():
         
         st.write("---")
         st.session_state.prozis_weight = st.number_input("⚖️ Morgengewicht (kg):", value=float(st.session_state.prozis_weight), step=0.1)
-        st.caption("Echtzeit-Anpassung deiner Trainings-Makros.")
         st.write("---")
 
         with st.expander("👨‍🍳 Perform-All Chefkoch: Rezeptkatalog"):
@@ -357,9 +357,6 @@ if check_password():
             recipe_choice = st.selectbox("Rezept auswählen:", list(recipe_book[cat_choice].keys()))
             selected_rec = recipe_book[cat_choice][recipe_choice]
             st.markdown(f"#### {recipe_choice} ({selected_rec['kcal']} kcal)")
-            for zutat in selected_rec["zutaten"]: st.markdown(f"- {zutat}")
-            st.caption(selected_rec["anleitung"])
-            
             if st.button("Heute essen (Loggen) ✅", key=f"log_chef_{recipe_choice}"):
                 st.session_state.meals_log.append({"name": recipe_choice, "kcal": selected_rec["kcal"], "protein": selected_rec["protein"], "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]})
                 st.rerun()
@@ -375,10 +372,8 @@ if check_password():
                     for meal in m_liste:
                         if "zutaten" in meal: zutaten_sammlung.extend(meal["zutaten"])
                 if zutaten_sammlung:
-                    st.success("Zutaten für deinen Wochenplan extrahiert:")
+                    st.success("Zutaten exzerpiert:")
                     for z in sorted(list(set(zutaten_sammlung))): st.markdown(f"- [ ] {z}")
-                else: st.caption("Noch keine Mahlzeiten im Plan hinterlegt.")
-            
             st.write("---")
             for tag, m_liste in st.session_state.ki_wochenplan.items():
                 if m_liste:
@@ -393,11 +388,6 @@ if check_password():
                             st.session_state.ki_wochenplan[tag].pop(m_idx)
                             st.rerun()
 
-        with st.expander("🤖 Freier KI-Assistent & Sprachbefehl"):
-            prompt_input = st.text_input("Extrawunsch einplanen (Mikrofon-Taste nutzen):", key="ki_prompt_box")
-            tag_auswahl = st.selectbox("Tag:", list(st.session_state.ki_wochenplan.keys()))
-            if st.button("KI-Rezept generieren 🪄") and prompt_input: pass
-
         with st.expander("📸 Neuen Mahlzeit-Scanner"):
             uploaded_file = st.file_uploader("Foto hochladen...", type=["jpg", "png", "jpeg"])
 
@@ -411,7 +401,7 @@ if check_password():
                         st.rerun()
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN & PRO CARDIO ENGINE (MITTE)
+    # SPALTE 2: TRAININGSPLAN & PRO LAUF/SCHWIMM ENGINE (MITTE)
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -419,15 +409,15 @@ if check_password():
             with st.expander("⌚ Live von deiner Garmin-Uhr erfasst (Heute)", expanded=True):
                 for rs in g_data["raw_strength_sets"]: st.write(rs)
         
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer"])
+        # JETZT NEU MIT SECHSTEM REITER FÜR SCHWIMMEN
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["T1: OK Kraft", "T2: HB Beine", "T3: OK Volumen", "T4: Schnellkraft", "T5: Ausdauer / Rad", "T6: Schwimmen 🏊‍♂️"])
         
         with tab1:
             st.subheader("Oberkörper Grundkraft")
             with st.expander("🧘 Warm-up: Schulter- & Brust-Mobility"):
-                st.checkbox("10x Schulter- & Armkreisen vorwärts/rückwärts")
-                st.checkbox("12x Besenstil / Band Pass-Throughs (Schultermobilität)")
-                st.checkbox("45s Brust-Dehnen am Türrahmen (je Seite)")
-                st.checkbox("12x Scapula Push-ups (Schulterblatt-Aktivierung)")
+                st.checkbox("10x Schulter- & Armkreisen")
+                st.checkbox("12x Besenstil / Band Pass-Throughs")
+                st.checkbox("45s Brust-Dehnen am Türrahmen")
             st.write("---")
             with st.expander("🏋️ Bankdrücken (4 Sätze x 6 Wdh.)"): render_exercise_engine("Bankdrücken", 85.0, 6)
             with st.expander("🏋️ Klimmzüge mit Zusatzgewicht"): render_exercise_engine("Klimmzüge", 10.0, 6)
@@ -438,10 +428,9 @@ if check_password():
         with tab2:
             st.subheader("Handball Leg Day (Explosivität & Gelenkschutz)")
             with st.expander("🧘 Warm-up: Hüft- & Knie-Stabilisierung"):
-                st.checkbox("60s Deep Squat Hold (Tiefe Hocke halten)")
-                st.checkbox("5x World's Greatest Stretch (je Seite)")
-                st.checkbox("60s Hip 90/90 Rotation (Hüftmobilität)")
-                st.checkbox("45s Couch Stretch / Hüftbeuger aufdehnen (je Seite)")
+                st.checkbox("60s Deep Squat Hold")
+                st.checkbox("5x World's Greatest Stretch")
+                st.checkbox("45s Couch Stretch")
             st.write("---")
             with st.expander("🏋️ Bulgarian Split Squats"): render_exercise_engine("Bulgarian Split Squats", 20.0, 8)
             with st.expander("🏋️ Trap-Bar Kreuzheben"): render_exercise_engine("Trap-Bar Kreuzheben", 120.0, 6)
@@ -458,16 +447,14 @@ if check_password():
             with st.expander("🏋️ Tricep Rope Pushdowns"): render_exercise_engine("Trizepsdrücken", 30.0, 12)
             st.write("---")
             with st.expander("🧘 Cool-down: Post-Workout Oberkörper Stretching"):
-                st.checkbox("60s Kindeshaltung / Child's Pose (Lat-Dehnen)")
-                st.checkbox("45s Pec-Stretch an der Wand (Brustmuskel-Regeneration)")
-                st.checkbox("30s Unterarm- & Handgelenk-Dehnen (wichtig für Wurfarm/Harz-Griff)")
+                st.checkbox("60s Kindeshaltung / Child's Pose")
+                st.checkbox("45s Pec-Stretch an der Wand")
             
         with tab4:
             st.subheader("Schnellkraft & Rumpfstabilität")
             with st.expander("🧘 Warm-up: BWS-Rotation & Core-Mobility"):
-                st.checkbox("10x BWS-Rotation im Vierfüßlerstand (je Seite)")
-                st.checkbox("15x Band Pull-Aparts (Aktivierung oberer Rücken)")
-                st.checkbox("5x Inchworms mit Ausfallschritt & Hüftöffner")
+                st.checkbox("10x BWS-Rotation im Vierfüßlerstand")
+                st.checkbox("15x Band Pull-Aparts")
             st.write("---")
             with st.expander("🏋️ Power Cleans / Umsetzen"): render_exercise_engine("Power Cleans", 60.0, 3)
             with st.expander("🏋️ Medizinball-Rotationswürfe"): render_exercise_engine("Medizinball-Würfe", 6.0, 8)
@@ -476,38 +463,34 @@ if check_password():
             with st.expander("🏋️ Pallof Press am Kabelzug"): render_exercise_engine("Pallof Press", 20.0, 12)
             
         with tab5:
-            st.subheader("🏃‍♂️ Ausdauer & Pacing-Zentrale")
+            st.subheader("🏃‍♂️ Ausdauer & Pacing-Zentrale (Lauf / Rad)")
             
-            # 1. LIVE REZENTE LAUFDATEN AUS DEINER GARMIN UHR
-            if g_data.get("garmin_runs_history"):
-                with st.expander("⌚ Garmin Live-Tracker: Letzte Läufe", expanded=True):
-                    st.success("Erfolgreich mit deiner Garmin synchronisiert:")
-                    df_g_runs = pd.DataFrame(g_data["garmin_runs_history"])
+            # Garmin Live Sync für Laufen & Radfahren
+            if g_data.get("garmin_cardio_history"):
+                with st.expander("⌚ Garmin Live-Tracker: Letzte Cardio-Einheiten", expanded=True):
+                    df_g_runs = pd.DataFrame(g_data["garmin_cardio_history"])
                     st.dataframe(df_g_runs, hide_index=True, use_container_width=True)
             
-            # 2. MASSIV ERWEITERTER MANUELLER KALKULATOR (Sicherheitsnetz)
             st.write("---")
-            st.markdown("**Manueller Ausdauer-Tracker:**")
+            st.markdown("**Manuelle Cardio-Einheit eintragen:**")
             
-            c_type = st.selectbox("Lauftyp wählen:", [
+            c_type = st.selectbox("Ausdauertyp wählen:", [
                 "Zone 2 Lauf (Grundlagenausdauer / Fettverbrennung)",
-                "Intervalllauf / HIIT (Laktattoleranz & Match-Sprints)",
-                "Schneller 5 km Tempolauf (Wettkampfhärte)",
+                "Intervalllauf / HIIT (Match-Sprints)",
+                "Schneller 5 km Tempolauf",
                 "10 km Dauerlauf (Aerobe Kapazität)",
                 "2-Stunden-Dauerlauf (Maximale Belastungsdauer)",
                 "Zone 4/5 Schwellenlauf (VO2-Max Entwicklung)",
-                "Handball Shuttle Runs (Sprints mit abruptem Abstoppen)"
+                "Handball Shuttle Runs (Pendelsprint-Härte)",
+                "Fahrrad / Radtour (Gelenkschonende Ausdauer)",
+                "Fahrrad-Intervalle (Explosivkraft Beine)"
             ])
             
-            if "Shuttle Runs" in c_type:
-                st.caption("💡 *Handball-Info:* Das sind explosive Pendelläufe zwischen Hallenlinien. Sie trainieren die exakten Stop-and-Go-Belastungen und schnellen Richtungswechsel in der Abwehr.")
-                
             c_col1, c_col2, c_col3 = st.columns(3)
-            c_dist = c_col1.number_input("Distanz (km):", value=5.0, step=0.1, key="c_dist_in")
-            c_min = c_col2.number_input("Zeit: Minuten:", value=25, step=1, key="c_min_in")
-            c_sec = c_col3.number_input("Zeit: Sekunden:", value=0, step=1, max_value=59, key="c_sec_in")
+            c_dist = c_col1.number_input("Distanz (km):", value=5.0, step=0.1, key="c_dist_all")
+            c_min = c_col2.number_input("Zeit: Minuten:", value=25, step=1, key="c_min_all")
+            c_sec = c_col3.number_input("Zeit: Sekunden:", value=0, step=1, max_value=59, key="c_sec_all")
             
-            # Vollautomatische Live-Pace & Geschwindigkeitsberechnung
             total_man_minutes = c_min + (c_sec / 60)
             if c_dist > 0 and total_man_minutes > 0:
                 man_speed = round(c_dist / (total_man_minutes / 60), 1)
@@ -520,35 +503,85 @@ if check_password():
                 m_calc1.metric("Berechnete Pace", man_pace_str)
                 m_calc2.metric("Geschwindigkeit", f"{man_speed} km/h")
             else:
-                man_pace_str = "--"
-                man_speed = 0
+                man_pace_str, man_speed = "--", 0
                 
-            if st.button("Lauf in Historie loggen 🏃‍♂️", key="log_cardio_btn"):
+            if st.button("Einheit in Historie eintragen 🏃‍♂️", key="log_cardio_all"):
                 h_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
                 st.session_state.cardio_history.append({
-                    "Datum": h_datum,
-                    "Typ": c_type.split(" (")[0],
-                    "Distanz": f"{c_dist} km",
-                    "Dauer": f"{c_min}:{c_sec:02d} Min",
-                    "Pace": man_pace_str,
-                    "Speed": f"{man_speed} km/h"
+                    "Datum": h_datum, "Typ": c_type.split(" (")[0], "Distanz": f"{c_dist} km",
+                    "Dauer": f"{c_min}:{c_sec:02d} Min", "Pace": man_pace_str, "Speed": f"{man_speed} km/h"
                 })
-                st.toast("Lauf erfolgreich protokolliert!", icon="🏃‍♂️")
                 st.rerun()
                 
-            # Historie aller Läufe
-            with st.expander("📈 Ergebnisse / Alle vergangenen Läufe"):
+            # KORREKTUR: Jetzt mit voll funktionsfähigem Lösch-X für jeden Listeneintrag!
+            with st.expander("📈 Ergebnisse / Alle vergangenen Einheiten"):
                 if st.session_state.cardio_history:
-                    df_c_history = pd.DataFrame(st.session_state.cardio_history)
-                    st.dataframe(df_c_history, hide_index=True, use_container_width=True)
-                else:
-                    st.caption("Noch keine Läufe manuell geloggt. Nutze die Eingabefelder oben.")
+                    for idx, run in enumerate(st.session_state.cardio_history):
+                        r_col1, r_col2 = st.columns([5, 1])
+                        r_col1.markdown(f"`{run['Datum']}` **{run['Typ']}**: {run['Distanz']} in {run['Dauer']} ({run['Pace']} | {run['Speed']})")
+                        if r_col2.button("❌", key=f"del_c_hist_{idx}", help="Eintrag löschen"):
+                            st.session_state.cardio_history.pop(idx)
+                            st.rerun()
+                else: st.caption("Noch keine Einheiten manuell geloggt.")
                 
             st.write("---")
             with st.expander("🧘 Cool-down: Regeneration & Blackroll"):
-                st.checkbox("3 Min. Waden & Schienbeine ausrollen (Blackroll gegen Shinsplints)")
-                st.checkbox("60s Quad-Stretch im Stehen (je Oberschenkel)")
-                st.checkbox("60s Hamstring-Stretching mit Band (Hintere Kette entlasten)")
+                st.checkbox("3 Min. Waden & Schienbeine ausrollen (Blackroll)")
+                st.checkbox("60s Quad-Stretch im Stehen")
+                
+        with tab6:
+            st.subheader("🏊‍♂️ Schwimm-Kommandozentrale")
+            
+            # Garmin Live Sync für Schwimmen
+            if g_data.get("garmin_swim_history"):
+                with st.expander("⌚ Garmin Live-Tracker: Letzte Schwimmeinheiten", expanded=True):
+                    df_g_swim = pd.DataFrame(g_data["garmin_swim_history"])
+                    st.dataframe(df_g_swim, hide_index=True, use_container_width=True)
+            
+            with st.expander("🧘 Warm-up: Schulter- & Gelenkmobilität (Schwimmen)"):
+                st.checkbox("15x Scapula-Umdrehungen am Kabel/Band")
+                st.checkbox("10x Brustwirbelsäulen-Rotatoren (Halle)")
+                st.checkbox("60s Nacken- & Trizeps-Dehnen")
+                
+            st.write("---")
+            st.markdown("**Manuelle Schwimmeinheit eintragen:**")
+            
+            sw_col1, sw_col2, sw_col3 = st.columns(3)
+            sw_dist = sw_col1.number_input("Distanz (Meter):", value=1500, step=50, key="sw_dist_in")
+            sw_min = sw_col2.number_input("Minuten:", value=30, step=1, key="sw_min_in")
+            sw_sec = sw_col3.number_input("Sekunden:", value=0, step=1, max_value=59, key="sw_sec_in")
+            
+            # SPEZIFISCHER SCHWIMM-RECHNER (Pace pro 100 Meter!)
+            total_swim_sec = (sw_min * 60) + sw_sec
+            if sw_dist > 0 and total_swim_sec > 0:
+                swim_pace_dec = (total_swim_sec / 60) / (sw_dist / 100)
+                sm = int(swim_pace_dec)
+                ss = int((swim_pace_dec - sm) * 60)
+                swim_pace_str = f"{sm}:{ss:02d} min/100m"
+                st.metric("Berechnete Schwimm-Pace:", swim_pace_str)
+            else:
+                swim_pace_str = "--"
+                
+            if st.button("Schwimmen in Historie loggen 💾", key="log_swim_btn"):
+                h_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
+                st.session_state.swim_history.append({
+                    "Datum": h_datum,
+                    "Distanz": f"{sw_dist} m",
+                    "Dauer": f"{sw_min}:{sw_sec:02d} Min",
+                    "Pace": swim_pace_str
+                })
+                st.rerun()
+                
+            # Schwimm-Historie inklusive Lösch-X
+            with st.expander("📈 Ergebnisse / Alle vergangenen Schwimmtrainings"):
+                if st.session_state.swim_history:
+                    for idx, swim in enumerate(st.session_state.swim_history):
+                        sw_c1, sw_col2 = st.columns([5, 1])
+                        sw_c1.markdown(f"`{swim['Datum']}` **Schwimmen**: {swim['Distanz']} in {swim['Dauer']} (Ø-Pace: `{swim['Pace']}`)")
+                        if sw_col2.button("❌", key=f"del_sw_hist_{idx}"):
+                            st.session_state.swim_history.pop(idx)
+                            st.rerun()
+                else: st.caption("Noch keine manuellen Schwimmeinheiten eingetragen.")
 
     # ==========================================
     # SPALTE 3: GARMIN VITAL-HUB (RECHTS)
@@ -559,7 +592,7 @@ if check_password():
         st.subheader("🔥 Live-Umsatz")
         st.metric("Aktiv-Verbrauch", f"{g_data['active_cal']} kcal")
         st.metric("Gesamt-Umsatz", f"{g_data['total_cal']} kcal")
-        st.caption(f"BMR Ruhebedarf: {g_data['bmr_cal']} kcal")
+        st.caption(f"BMR Rechner: {g_data['bmr_cal']} kcal")
         st.write("---")
         
         with st.expander("🏃 Aktivität & Schritte"):
