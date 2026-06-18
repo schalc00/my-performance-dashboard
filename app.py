@@ -294,9 +294,23 @@ if check_password():
         }
     }
 
-    # EXERCISE ENGINE
+    alle_uebungen = [
+        "Bankdrücken", "Klimmzüge", "Dips", "Langhantelrudern", "Face Pulls", "Bulgarian Split Squats", "Trap-Bar Kreuzheben", 
+        "Box Jumps", "Lateral Lunges", "Nordic Hamstring Curls", "Schrägbankdrücken KH", "Kabelrudern eng", "Seitheben", 
+        "Incline Curls", "Trizepsdrücken", "Power Cleans", "Medizinball-Würfe", "Romanian Deadlifts", "Ab-Wheel Rollouts", "Pallof Press"
+    ]
+    if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
+    if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
+
+    # CRITICAL KORREKTUR PYTHON 3.14: Komplett isolierter Bestwert-Sicherer (Verhindert KeyError im with-Block)
     def render_exercise_engine(ue_name, default_w, default_r):
-        st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
+        # Wert VORAB isolieren, damit der Session-State-Proxy auf dem Server nicht crasht
+        letzter_bestwert = "Kein Wert"
+        if ue_name in st.session_state.kraft_history and len(st.session_state.kraft_history[ue_name]) > 0:
+            letzter_bestwert = st.session_state.kraft_history[ue_name][-1].get('Leistung', 'Stabil')
+            
+        st.markdown(f"**Letzter Bestwert:** `{letzter_bestwert}`")
+        
         g_today = g_data.get("garmin_strength_today", {})
         if ue_name in g_today: st.info(f"⌚ Garmin Live: {', '.join(g_today[ue_name])}")
         
@@ -346,7 +360,6 @@ if check_password():
     elif st.session_state.selected_date == heute_datum + datetime.timedelta(days=1): display_label = f"Morgen ({formatted_date_view})"
     else: display_label = f"{selected_weekday}, {formatted_date_view}"
         
-    # CRITICAL KORREKTUR FÜR PYTHON 3.14: Den f-String komplett VORAB isolieren!
     html_titel = f"<h2 style='text-align: center; color: #00f0ff; margin-top: -10px; font-weight: 900;'>{display_label}</h2>"
     with nav_col2:
         st.markdown(html_titel, unsafe_allow_html=True)
