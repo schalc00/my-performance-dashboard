@@ -52,25 +52,33 @@ if check_password():
     
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # STABILES & ADVANCED GARMIN DATA-FETCHING
+    # ZEITZONEN & DATUMS-NAVIGATOR SETUP
+    berlin_tz = zoneinfo.ZoneInfo("Europe/Berlin")
+    heute_datum = datetime.datetime.now(berlin_tz).date()
+
+    if "selected_date" not in st.session_state:
+        st.session_state.selected_date = heute_datum
+
+    # ISO-String für Dict-Keys und Garmin-Schnittstelle generieren
+    selected_date_str = st.session_state.selected_date.isoformat()
+
+    # DYNAMISCHER GARMIN DATENABRUF FÜR DAS AUSGEWÄHLTE DATUM
     @st.cache_data(ttl=300)
-    def fetch_garmin_data():
+    def fetch_garmin_data(date_str):
         try:
             client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
             client.login()
             
-            berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
-            today = berlin_time.date().isoformat()
+            # Holt die Daten exakt für den ausgewählten Tag!
+            stats = client.get_stats(date_str)
+            heart_rates = client.get_heart_rates(date_str)
+            sleep_data = client.get_sleep_data(date_str)
+            activities = client.get_activities(0, 8) 
             
-            stats = client.get_stats(today)
-            heart_rates = client.get_heart_rates(today)
-            sleep_data = client.get_sleep_data(today)
-            activities = client.get_activities(0, 8)
-            
-            # --- ERWEITERTE PERFORMANCE-DATEN ---
+            # --- PERFORMANCE-DATEN ---
             vo2_max, recovery_time, race_5k, training_status = "--", "--", "--", "--"
             try:
-                t_status = client.get_training_status(today)
+                t_status = client.get_training_status(date_str)
                 if t_status:
                     vo2_max_raw = t_status.get("mostRecentRunVo2Max", {}).get("genericValue") or t_status.get("vo2Max")
                     vo2_max = f"{round(vo2_max_raw, 1)}" if vo2_max_raw else "--"
@@ -108,16 +116,11 @@ if check_password():
                             p_s = int((pace_dec - p_m) * 60)
                             pace_str = f"{p_m}:{p_s:02d} min/km"
                             speed_kmh = round(r_dist / (total_min / 60), 1)
-                        else:
-                            pace_str, speed_kmh = "--", 0
+                        else: pace_str, speed_kmh = "--", 0
                             
                         garmin_cardio_history.append({
-                            "Datum": formatted_date,
-                            "Typ": "Fahrrad" if "cycl" in w_type or "bik" in w_type else "Lauf",
-                            "Distanz": f"{r_dist} km",
-                            "Dauer": f"{r_dur_min} Min",
-                            "Pace": pace_str,
-                            "Speed": f"{speed_kmh} km/h"
+                            "Datum": formatted_date, "Typ": "Fahrrad" if "cycl" in w_type or "bik" in w_type else "Lauf",
+                            "Distanz": f"{r_dist} km", "Dauer": f"{r_dur_min} Min", "Pace": pace_str, "Speed": f"{speed_kmh} km/h"
                         })
                     
                     if w_type in ['swimming', 'lap_swimming']:
@@ -130,17 +133,13 @@ if check_password():
                             sm = int(pace_100m_dec)
                             ss = int((pace_100m_dec - sm) * 60)
                             swim_pace_str = f"{sm}:{ss:02d} min/100m"
-                        else:
-                            swim_pace_str = "--"
+                        else: swim_pace_str = "--"
                             
                         garmin_swim_history.append({
-                            "Datum": formatted_date,
-                            "Distanz": f"{s_dist} m",
-                            "Dauer": f"{s_dur_min} Min",
-                            "Pace": swim_pace_str
+                            "Datum": formatted_date, "Distanz": f"{s_dist} m", "Dauer": f"{s_dur_min} Min", "Pace": swim_pace_str
                         })
 
-                    if w_type == 'strength_training' and act_date == today:
+                    if w_type == 'strength_training' and act_date == date_str:
                         act_id = act.get('activityId')
                         try:
                             details = client.get_activity_details(act_id)
@@ -227,14 +226,14 @@ if check_password():
             }
             return fallback, False
 
-    g_data, garmin_success = fetch_garmin_data()
+    g_data, garmin_success = fetch_garmin_data(selected_date_str)
     step_perc = min(float(g_data['steps'] / g_data['step_goal']), 1.0) if g_data['step_goal'] > 0 else 0.0
 
     # ==========================================
-    # INITIALISIERUNGEN (SESSION STATE)
+    # JETZT NEU: TAGGENAUES ERNÄHRUNGSPROTOKOLL (DICT-STRUKTUR)
     # ==========================================
-    if "meals_log" not in st.session_state: st.session_state.meals_log = []
-    else: st.session_state.meals_log = [m for m in st.session_state.meals_log if isinstance(m, dict)]
+    if "meals_log" not in st.session_state or isinstance(st.session_state.meals_log, list):
+        st.session_state.meals_log = {} # Wandelt alten Stand fehlerfrei in tägliche Kacheln um
 
     if "favorites" not in st.session_state: st.session_state.favorites = {"--- Bitte wählen ---": None}
     if "ki_wochenplan" not in st.session_state:
@@ -244,11 +243,10 @@ if check_password():
     if "cardio_history" not in st.session_state: st.session_state.cardio_history = []
     if "swim_history" not in st.session_state: st.session_state.swim_history = []
 
-    berlin_time = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin"))
-    tage_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
-    heute_wochentag = tage_de[berlin_time.weekday()]
+    # Wochentag des aktuell *ausgewählten* Datums ermitteln
+    selected_weekday = tage_de[st.session_state.selected_date.weekday()]
 
-    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM MORGENGEWICHT
+    # AUTOMATISCHE MAKROANPASSUNG BASIEREND AUF DEM GEWICHT
     w_aktuell = st.session_state.prozis_weight
     tagesbedarf = {
         "kcal": int(w_aktuell * 25.5),      
@@ -257,20 +255,23 @@ if check_password():
         "fat": int(w_aktuell * 0.78)
     }
 
-    # Verrechnung der Mahlzeiten
-    verzehrt_kcal = sum(m.get("kcal", 0) for m in st.session_state.meals_log)
-    verzehrt_protein = sum(m.get("protein", 0) for m in st.session_state.meals_log)
-    verzehrt_carbs = sum(m.get("carbs", 0) for m in st.session_state.meals_log)
-    verzehrt_fat = sum(m.get("fat", 0) for m in st.session_state.meals_log)
+    # Nur die Mahlzeiten für das spezifisch ausgewählte Datum laden
+    heutige_mahlzeiten_liste = st.session_state.meals_log.get(selected_date_str, [])
 
-    for wp_meal in st.session_state.ki_wochenplan.get(heute_wochentag, []):
+    verzehrt_kcal = sum(m.get("kcal", 0) for m in heutige_mahlzeiten_liste)
+    verzehrt_protein = sum(m.get("protein", 0) for m in heutige_mahlzeiten_liste)
+    verzehrt_carbs = sum(m.get("carbs", 0) for m in heutige_mahlzeiten_liste)
+    verzehrt_fat = sum(m.get("fat", 0) for m in heutige_mahlzeiten_liste)
+
+    # Abgehakte Wochenplan-Gerichte für diesen spezifischen Wochentag mitverrechnen
+    for wp_meal in st.session_state.ki_wochenplan.get(selected_weekday, []):
         if wp_meal.get("done"):
             verzehrt_kcal += wp_meal.get("kcal", 0)
             verzehrt_protein += wp_meal.get("protein", 0)
             verzehrt_carbs += wp_meal.get("carbs", 0)
             verzehrt_fat += wp_meal.get("fat", 0)
 
-    # JETZT INTERGRIERT: Garmin Aktiv-Kalorien erhöhen dynamisch dein Tages-Soll!
+    # Garmin Aktiv-Kalorien-Bonus für das ausgewählte Datum dazurechnen
     kcal_bonus = g_data.get("active_cal", 0)
     dynamisches_kcal_ziel = tagesbedarf["kcal"] + kcal_bonus
 
@@ -309,7 +310,7 @@ if check_password():
     if "kraft_history" not in st.session_state: st.session_state.kraft_history = {ue: [{"Datum": "15.06.", "Leistung": "Basiswert stabil"}] for ue in alle_uebungen}
     if "current_workout_logs" not in st.session_state: st.session_state.current_workout_logs = {ue: [] for ue in alle_uebungen}
 
-    # THE WORKOUT ENGINE
+    # WORKOUT MECHANIK
     def render_exercise_engine(ue_name, default_w, default_r):
         st.markdown(f"**Letzter Bestwert:** `{st.session_state.kraft_history[ue_name][-1]['Leistung']}`")
         g_today = g_data.get("garmin_strength_today", {})
@@ -333,15 +334,47 @@ if check_password():
             st.rerun()
         if st.session_state.current_workout_logs[ue_name] and b_col2.button("Sichern 💾", key=f"btn_save_{ue_name}"):
             zusammenfassung = ", ".join(st.session_state.current_workout_logs[ue_name])
-            heute_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
-            st.session_state.kraft_history[ue_name].append({"Datum": heute_datum, "Leistung": zusammenfassung})
+            st.session_state.kraft_history[ue_name].append({"Datum": st.session_state.selected_date.strftime("%d.%m."), "Leistung": zusammenfassung})
             st.session_state.current_workout_logs[ue_name] = [] 
             st.rerun()
 
         with st.expander("📈 Ergebnisse / Historie"):
             st.dataframe(pd.DataFrame(st.session_state.kraft_history[ue_name]), hide_index=True, use_container_width=True)
 
-    # LAYOUT OVERVIEW
+    # ==========================================
+    # NEU: DIE ZEITREISEN-NAVIGATION GANZ OBEN (OLED BRANDING)
+    # ==========================================
+    st.write("")
+    nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
+    
+    # 7 Tage Limit zurück
+    if st.session_state.selected_date > heute_datum - datetime.timedelta(days=7):
+        if nav_col1.button("◀ Vorheriger Tag", use_container_width=True):
+            st.session_state.selected_date -= datetime.timedelta(days=1)
+            st.rerun()
+            
+    # Hübsches, dynamisches Label erzeugen
+    formatted_date_view = st.session_state.selected_date.strftime("%d.%m.%Y")
+    if st.session_state.selected_date == heute_datum:
+        display_label = f"Heute ({formatted_date_view})"
+    elif st.session_state.selected_date == heute_datum - datetime.timedelta(days=1):
+        display_label = f"Gestern ({formatted_date_view})"
+    elif st.session_state.selected_date == heute_datum + datetime.timedelta(days=1):
+        display_label = f"Morgen ({formatted_date_view})"
+    else:
+        display_label = f"{selected_weekday}, {formatted_date_view}"
+        
+    nav_col2.markdown(f"<h2 style='text-align: center; color: #00f0ff; margin-top: -10px; font-weight: 900;'>{display_label}</h2>", unsafe_allowed_html=True)
+    
+    # 7 Tage Limit nach vorne
+    if st.session_state.selected_date < heute_datum + datetime.timedelta(days=7):
+        if nav_col3.button("Nächster Tag ▶", use_container_width=True):
+            st.session_state.selected_date += datetime.timedelta(days=1)
+            st.rerun()
+            
+    st.write("---")
+
+    # DREI-SPALTEN-LAYOUT START
     col1, col2, col3 = st.columns([1.1, 1.5, 1], gap="large")
 
     # ==========================================
@@ -350,7 +383,6 @@ if check_password():
     with col1:
         st.header("🍽️ Ernährung & Orga")
         
-        # Zeigt dir das Restbudget inklusive des aufgerechneten Garmin-Bonus an!
         st.metric("Kcal Restbudget", f"{rem_kcal} kcal", f"Soll: {tagesbedarf['kcal']} (+{kcal_bonus} Aktiv)")
         st.metric("Protein Rest", f"{rem_p}g", f"Ziel: {tagesbedarf['protein']}g", delta_color="inverse")
         
@@ -367,9 +399,15 @@ if check_password():
             recipe_choice = st.selectbox("Rezept auswählen:", list(recipe_book[cat_choice].keys()))
             selected_rec = recipe_book[cat_choice][recipe_choice]
             st.markdown(f"#### {recipe_choice} ({selected_rec['kcal']} kcal)")
+            
             if st.button("Heute essen (Loggen) ✅", key=f"log_chef_{recipe_choice}"):
-                st.session_state.meals_log.append({"name": recipe_choice, "kcal": selected_rec["kcal"], "protein": selected_rec["protein"], "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]})
+                if selected_date_str not in st.session_state.meals_log:
+                    st.session_state.meals_log[selected_date_str] = []
+                st.session_state.meals_log[selected_date_str].append({
+                    "name": recipe_choice, "kcal": selected_rec["kcal"], "protein": selected_rec["protein"], "carbs": selected_rec["carbs"], "fat": selected_rec["fat"]
+                })
                 st.rerun()
+                
             w_tag = st.selectbox("In Wochenplan schieben:", list(st.session_state.ki_wochenplan.keys()), key=f"day_chef_{recipe_choice}")
             if st.button("Für diesen Tag einplanen 📅", key=f"plan_chef_{recipe_choice}"):
                 st.session_state.ki_wochenplan[w_tag].append({"label": f"{recipe_choice} [{selected_rec['kcal']} kcal]", "instruction": selected_rec["anleitung"], "done": False, "kcal": selected_rec["kcal"], "protein": selected_rec["protein"], "carbs": selected_rec["carbs"], "fat": selected_rec["fat"], "zutaten": selected_rec["zutaten"]})
@@ -401,17 +439,18 @@ if check_password():
         with st.expander("📸 Neuen Mahlzeit-Scanner"):
             uploaded_file = st.file_uploader("Foto hochladen...", type=["jpg", "png", "jpeg"])
 
-        with st.expander("📋 Heutiges Ernährungsprotokoll"):
-            if st.session_state.meals_log:
-                for idx, meal in enumerate(st.session_state.meals_log):
+        with st.expander("📋 Ernährungsprotokoll dieses Tages"):
+            if heutige_mahlzeiten_liste:
+                for idx, meal in enumerate(heutige_mahlzeiten_liste):
                     m_col1, m_col2 = st.columns([5, 1])
                     m_col1.caption(f"✔️ {meal['name']} ({meal['kcal']} kcal)")
                     if m_col2.button("❌", key=f"del_meal_{idx}"):
-                        st.session_state.meals_log.pop(idx)
+                        st.session_state.meals_log[selected_date_str].pop(idx)
                         st.rerun()
+            else: st.caption("Noch keine Mahlzeiten an diesem Tag geloggt.")
 
     # ==========================================
-    # SPALTE 2: TRAININGSPLAN & AUTOMATISIERTE EMOS (MITTE)
+    # SPALTE 2: TRAININGSPLAN, CARDIO & SWIM
     # ==========================================
     with col2:
         st.header("📅 Trainingsplan & Einheiten")
@@ -419,14 +458,8 @@ if check_password():
             with st.expander("⌚ Live von deiner Garmin-Uhr erfasst (Heute)", expanded=True):
                 for rs in g_data["raw_strength_sets"]: st.write(rs)
         
-        # NEU: Schicke Emojis hinter allen Tab-Überschriften
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-            "T1: OK Kraft 🦍", 
-            "T2: HB Beine 🤾", 
-            "T3: OK Vol 🦅", 
-            "T4: Schnellkraft ⚡", 
-            "T5: Cardio / Rad 🏃‍♂️", 
-            "T6: Schwimmen 🏊‍♂️"
+            "T1: OK Kraft 🦍", "T2: HB Beine 🤾", "T3: OK Vol 🦅", "T4: Schnellkraft ⚡", "T5: Ausdauer / Rad 🏃‍♂️", "T6: Schwimmen 🏊‍♂️"
         ])
         
         with tab1:
@@ -491,20 +524,16 @@ if check_password():
             st.markdown("**Manuelle Cardio-Einheit eintragen:**")
             
             c_type = st.selectbox("Ausdauertyp wählen:", [
-                "Zone 2 Lauf (Grundlagenausdauer / Fettverbrennung)",
-                "Intervalllauf / HIIT (Match-Sprints)",
-                "Schneller 5 km Tempolauf",
-                "10 km Dauerlauf (Aerobe Kapazität)",
-                "2-Stunden-Dauerlauf (Maximale Belastungsdauer)",
-                "Zone 4/5 Schwellenlauf (VO2-Max Entwicklung)",
-                "Handball Shuttle Runs (Pendelsprint-Härte)",
-                "Fahrrad / Radtour (Gelenkschonende Ausdauer)",
+                "Zone 2 Lauf (Grundlagenausdauer / Fettverbrennung)", "Intervalllauf / HIIT (Match-Sprints)",
+                "Schneller 5 km Tempolauf", "10 km Dauerlauf (Aerobe Kapazität)",
+                "2-Stunden-Dauerlauf (Maximale Belastungsdauer)", "Zone 4/5 Schwellenlauf (VO2-Max Entwicklung)",
+                "Handball Shuttle Runs (Pendelsprint-Härte)", "Fahrrad / Radtour (Gelenkschonende Ausdauer)",
                 "Fahrrad-Intervalle (Explosivkraft Beine)"
             ])
             
             c_col1, c_col2, c_col3 = st.columns(3)
             c_dist = c_col1.number_input("Distanz (km):", value=5.0, step=0.1, key="c_dist_all")
-            c_min = c_col2.number_input("Zeit: Minutes:", value=25, step=1, key="c_min_all")
+            c_min = c_col2.number_input("Zeit: Minuten:", value=25, step=1, key="c_min_all")
             c_sec = c_col3.number_input("Zeit: Sekunden:", value=0, step=1, max_value=59, key="c_sec_all")
             
             total_man_minutes = c_min + (c_sec / 60)
@@ -518,13 +547,11 @@ if check_password():
                 m_calc1, m_calc2 = st.columns(2)
                 m_calc1.metric("Berechnete Pace", man_pace_str)
                 m_calc2.metric("Geschwindigkeit", f"{man_speed} km/h")
-            else:
-                man_pace_str, man_speed = "--", 0
+            else: man_pace_str, man_speed = "--", 0
                 
             if st.button("Einheit in Historie eintragen 🏃‍♂️", key="log_cardio_all"):
-                h_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
                 st.session_state.cardio_history.append({
-                    "Datum": h_datum, "Typ": c_type.split(" (")[0], "Distanz": f"{c_dist} km",
+                    "Datum": st.session_state.selected_date.strftime("%d.%m."), "Typ": c_type.split(" (")[0], "Distanz": f"{c_dist} km",
                     "Dauer": f"{c_min}:{c_sec:02d} Min", "Pace": man_pace_str, "Speed": f"{man_speed} km/h"
                 })
                 st.rerun()
@@ -546,7 +573,6 @@ if check_password():
                 
         with tab6:
             st.subheader("🏊‍♂️ Schwimm-Kommandozentrale")
-            
             if g_data.get("garmin_swim_history"):
                 with st.expander("⌚ Garmin Live-Tracker: Letzte Schwimmeinheiten", expanded=True):
                     df_g_swim = pd.DataFrame(g_data["garmin_swim_history"])
@@ -555,7 +581,6 @@ if check_password():
             with st.expander("🧘 Warm-up: Schulter- & Gelenkmobilität (Schwimmen)"):
                 st.checkbox("15x Scapula-Umdrehungen am Kabel/Band")
                 st.checkbox("10x Brustwirbelsäulen-Rotatoren (Halle)")
-                st.checkbox("60s Nacken- & Trizeps-Dehnen")
                 
             st.write("---")
             st.markdown("**Manuelle Schwimmeinheit eintragen:**")
@@ -572,13 +597,11 @@ if check_password():
                 ss = int((swim_pace_dec - sm) * 60)
                 swim_pace_str = f"{sm}:{ss:02d} min/100m"
                 st.metric("Berechnete Schwimm-Pace:", swim_pace_str)
-            else:
-                swim_pace_str = "--"
+            else: swim_pace_str = "--"
                 
             if st.button("Schwimmen in Historie loggen 💾", key="log_swim_btn"):
-                h_datum = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).strftime("%d.%m.")
                 st.session_state.swim_history.append({
-                    "Datum": h_datum, "Distanz": f"{sw_dist} m",
+                    "Datum": st.session_state.selected_date.strftime("%d.%m."), "Distanz": f"{sw_dist} m",
                     "Dauer": f"{sw_min}:{sw_sec:02d} Min", "Pace": swim_pace_str
                 })
                 st.rerun()
